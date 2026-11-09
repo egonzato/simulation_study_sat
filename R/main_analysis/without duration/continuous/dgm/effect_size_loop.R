@@ -1,10 +1,10 @@
-## ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## -------------------------------------------------------------------------------------------------------------
 pacman::p_load(dplyr,ggplot2,lubridate,ipw,emmeans,marginaleffects,
                lpSolve,randomForest,
                optmatch,lme4,lmerTest,ggdag,RColorBrewer,MatchIt,lubridate)
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## -------------------------------------------------------------------------------------------------------------
 function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\without duration",
                 "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
                 "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
@@ -14,7 +14,7 @@ sapply(files, source)
 }
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## -------------------------------------------------------------------------------------------------------------
 set.seed(3111963)
 # define N
 n=1e4
@@ -36,7 +36,7 @@ hist(as.numeric(onsetdatev),
 abline(v=as.numeric(as.Date('2021-05-31')),col="red",lty=2,lwd=2)
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## -------------------------------------------------------------------------------------------------------------
 covs=data.frame(id=1:n,
                 dateonset=onsetdatev,
               aoo=runif(n,0,8),
@@ -46,7 +46,7 @@ covs=data.frame(id=1:n,
               sex=sample(c('male','female'),n,replace=T))
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## -------------------------------------------------------------------------------------------------------------
 set.seed(181299)
 t=seq(0,365.25*10,by=182.625)
 id=1:n
@@ -67,7 +67,7 @@ df=df %>%
          epsilon = rnorm(n(),0,0.08)) %>% ungroup()
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## -------------------------------------------------------------------------------------------------------------
 df_sim=df %>% 
     group_by(id) %>% 
     mutate(trialdate=as.Date("2021-05-31"),
@@ -97,7 +97,7 @@ df_sim=df_sim %>%
   ungroup()
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## -------------------------------------------------------------------------------------------------------------
 # set seed for missing data
 set.seed(181299)
 # targets
@@ -110,8 +110,8 @@ for (i in 1:length(targets)){
   # define treatment effect and  select only certain time points
 df_sim=df_sim %>% 
   mutate(timen=as.numeric(date-firstvisit)/365.25,
-         b0 = 0.95 - (0.009*mean(aoo) - 0.042*mean(sex=="male") + 0.096*mean(yoo_c)),
-         hui_linear_untrt = (b0+u0)+ 0.009*aoo - 0.04*(sex=="male")  + 0.096*yoo_c -0.1*timen+epsilon,
+         b0 = 0.95 - (0.009*mean(aoo) - 0.042*mean(sex=="male") + 0.005*mean(yoo_c)),
+         hui_linear_untrt = (b0+u0)+ 0.009*aoo - 0.042*(sex=="male")  + 0.005*yoo_c -0.1*timen+epsilon,
          hui_linear_trt=hui_linear_untrt+0*trt+targets[i]*trt*timen)
   # define dataset
   path=paste(folder,targets[i]*2,".rds",sep="")
@@ -121,6 +121,6 @@ df_sim=df_sim %>%
 }
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## -------------------------------------------------------------------------------------------------------------
 knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\effect_size_loop.qmd")
 

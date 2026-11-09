@@ -73,6 +73,23 @@ trialdf %>%
   theme_bw()
 ```
 
+Raw model
+
+```{r}
+# model
+trial=trialdf %>% 
+  group_by(id) %>% 
+  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  filter(row_number()!=1) %>% 
+  ungroup() %>% 
+  lmer(hui_linear_trt~(1|id)+hui_baseline+trt*timen+yoo,.)
+# marginalize
+estimand=emmeans(trial, ~ trt | timen,
+                              at = list(timen=2),
+                 cov.reduce=list(yoo=mean))
+# see contrast
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
+```
 
 # Methods
 
@@ -124,7 +141,6 @@ t.test(
   ungroup(),
   var.equal = TRUE)
 ```
-
 
 Run model and marginalize
 
@@ -181,9 +197,9 @@ matched=psm_matching(data=baseline,
                      ratio=2,
                      replacement=F,
                      distance='glm',
-                     method='optimal',
+                     method='greedy',
                      #tune=TRUE,
-                     #caliper=0.1,
+                     caliper=0.1,
                      duration=NULL,
                      time=timen)
 # get matches
@@ -200,6 +216,27 @@ trialdf_analysis=trialdf_matched %>%
   mutate(hui_baseline=first(hui_linear_trt)) %>% 
   filter(row_number()!=1) %>% 
   ungroup()
+```
+
+Difference in baseline
+
+```{r}
+# mean difference in hui_baseline
+trialdf_analysis %>% 
+  group_by(id) %>% 
+  filter(row_number()==1) %>% 
+  ungroup() %>% 
+  group_by(trt) %>% 
+  summarise(mean=mean(hui_baseline),
+            sd=sd(hui_baseline))
+# test
+t.test(
+  hui_baseline ~ trt,
+  data = trialdf_analysis %>%
+  group_by(id) %>%
+  filter(row_number() == 1) %>%
+  ungroup(),
+  var.equal = TRUE)
 ```
 
 Plot
@@ -378,11 +415,11 @@ ate=gcomp(trialdf %>%
           treatment="trt_overall",
           time="timen",
           formula=hui_linear_trt~(1|id)+hui_baseline+trt_overall*timen+aoo+sex+yoo,
-          landmark=2)
+          landmark=2)[1]
 ```
 
 # purl
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\without duration\\continuous\\single_methods\\single_methods.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\single_methods\\single_methods.qmd")
 ```
