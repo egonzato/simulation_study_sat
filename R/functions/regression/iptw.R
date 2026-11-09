@@ -40,7 +40,8 @@ iptw=function(data=NULL,formula=NULL,type='stabilised',estimand='ATE',truncate=N
     if(estimand=='ATE'){
       data = data %>% mutate(w = ifelse(!!treatment_quo==1, pt/distance, (1-pt)/(1-distance)))
     } else if(estimand=='ATT'){
-      data = data %>% mutate(w = ifelse(!!treatment_quo==1, 1, pt*distance/((1-pt)*(1-distance))))
+      # controls: odds weights rescaled by (1-pt)/pt so they sum to ~n_ctrl
+      data = data %>% mutate(w = ifelse(!!treatment_quo==1, 1, (1-pt)*distance/(pt*(1-distance))))
     }
   } else if(type=='unstabilised'){
     if(estimand=='ATE'){
