@@ -237,17 +237,36 @@ matching_interpolation=function(data=NULL,identifier=NULL,treatment=NULL,y=NULL,
     rownames(distance)=as.character(treated$idm); colnames(distance)=as.character(untreated$idm)
     full_data=as.data.frame(bind_rows(treated,untreated))
     rownames(full_data)=c(as.character(treated$idm),as.character(untreated$idm))
-    # controls = ratio specifies how many controls per treated patient
-    ## pair match
-    mean_controls = min(ratio, nrow(untreated) / nrow(treated))
-    match_result = fullmatch(distance,
+    # exact variables define separate subproblems (as MatchIt does with exact=):
+    # one optimal match per sex, so a shortage of controls in one sex does not make the whole match fail
+    if(!is.null(enexpr(sex))){
+      strata=intersect(unique(treated_sex),unique(untreated_sex))
+      rows_by=lapply(strata,function(s) which(treated_sex==s))
+      cols_by=lapply(strata,function(s) which(untreated_sex==s))
+    } else {
+      strata="all"; rows_by=list(seq_len(nrow(treated))); cols_by=list(seq_len(nrow(untreated)))
+    }
+    match_result=list(); match_df=data.frame(idm=integer(),subclass=character(),stringsAsFactors=FALSE)
+    for(s in seq_along(strata)){
+      r=rows_by[[s]]; cc=cols_by[[s]]
+      # controls = ratio specifies how many controls per treated patient, within the stratum
+      mean_controls=min(ratio,length(cc)/length(r))
+      res=tryCatch(fullmatch(distance[r,cc,drop=FALSE],
                              min.controls = 1,
                              max.controls = ratio,
                              mean.controls = mean_controls,
                              remove.unmatchables = TRUE,
-                             data = full_data)
-    # convert match result to dataframe
-    match_df=data.frame(idm=as.integer(names(match_result)),subclass=as.character(match_result),stringsAsFactors=FALSE) %>% filter(!is.na(subclass))
+                             data = full_data[c(rownames(distance)[r],colnames(distance)[cc]),,drop=FALSE]),
+                   error=function(e) NULL)
+      # a failed stratum leaves its treated patients unmatched (recovered below)
+      if(is.null(res)){next}
+      match_result[[as.character(strata[s])]]=res
+      # prefix subclass with the stratum, since each fullmatch call numbers its subclasses independently
+      match_df=bind_rows(match_df,
+                         data.frame(idm=as.integer(names(res)),subclass=as.character(res),stringsAsFactors=FALSE) %>%
+                           filter(!is.na(subclass)) %>%
+                           mutate(subclass=paste(strata[s],subclass,sep="_")))
+    }
     # join back to original data to recover full information
     matched_treated=treated %>% inner_join(match_df,by="idm")
     matched_untreated=untreated %>% inner_join(match_df,by="idm")
