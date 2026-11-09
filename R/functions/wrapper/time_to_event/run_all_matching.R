@@ -1,0 +1,15 @@
+run_all_matching=function(data,ratio,methods,landmark){
+  out=bind_rows(
+    lapply(
+      seq_len(length(methods)),
+      function(i){
+        run_matching_methods(
+          data=data,
+          methods=methods[i],
+          ratio=ratio,
+          landmark=landmark
+        )
+      }
+    )
+  )
+}

@@ -1,0 +1,487 @@
+---
+title: "methods"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,
+               randomForest,survival,ggsurvfit,survminer,MatchIt,boot)
+```
+
+# Source methods
+
+```{r}
+function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\time_to_event",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
+for (i in 1:length(function_dirs)){
+  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+sapply(files, source)
+}
+```
+
+# Load dataset
+
+```{r}
+pop=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\with duration\\time_to_event\\population_rr_0.5.rds")
+```
+
+## Select some patients to run functions
+
+Divide into treated and untreated
+
+```{r}
+trt=pop %>% filter(trt==1) 
+untrt=pop %>% filter(trt==0) 
+```
+
+Smaller sample size
+
+```{r}
+set.seed(03111963)
+dftrial=rbind(trt[sample(1:nrow(trt),20),],
+            untrt[sample(1:nrow(untrt),50),]) %>% 
+  select(id,ageonset,sex,calendar,event,time,duration,trt)
+```
+
+# Test procedures
+
+## Duration matching
+
+```{r}
+matched=duration_matching(dftrial,treatment=trt,duration=duration,time=time,ratio=1)
+# extract dataset
+matcheddf=matched$dataset %>% 
+  mutate(event=ifelse(time_trial>730,0,1),
+         time_trial=ifelse(time_trial>730,730,time_trial))
+```
+
+Model
+
+```{r}
+model=coxph(Surv(time_trial,event)~trt+calendar,x=T,
+              data=matcheddf,robust=T,cluster=cluster)
+```
+
+Risk ratio
+
+```{r}
+rr=risk_ratio(matcheddf,model=model,
+              treatment="trt",estimand="ATT",landmark=730)
+```
+
+## Exact matching
+
+```{r}
+# match
+matched=matching(data=dftrial,treatment=trt,
+                   ageofonset=ageonset,sex=sex,
+                   duration=duration,time=time,
+                   method='greedy',
+                   #caliper=NULL,step=NULL,maxcaliper=NULL,
+                   caliper=1,step=0.1,maxcaliper=1,
+                   ratio=1,
+                   replacement=F,history=F,warning=T)
+
+# extract dataset
+matcheddf=matched$dataset %>% 
+  mutate(event=ifelse(time_trial>730,0,1),
+         time_trial=ifelse(time_trial>730,730,time_trial))
+# number of events
+table(matcheddf$trt,matcheddf$event)
+```
+
+### Point estimate
+
+Run model
+
+```{r}
+model=coxph(Surv(time_trial,event)~trt+calendar,x=T,
+              data=matcheddf,robust=T,cluster=cluster)
+```
+
+Point estimate
+
+```{r}
+rr=risk_ratio(matcheddf,model=model,
+              treatment="trt",estimand="ATT",landmark=730)
+```
+
+### bootstrap procedure
+
+##### boot package
+
+```{r}
+B=boot(data=dftrial,
+       R=5,
+       strata=dftrial[["trt"]],
+       full_data=dftrial,
+       estimand="ATT",
+       statistic=boot_matching,
+       estimate="surv_rr",
+       landmark=730,
+       ratio=2,
+       treatment_model=trt~ageonset,
+       exact_arguments=list(caliper=NULL,
+                            step=NULL,
+                            maxcaliper=NULL),
+       outcome_model=Surv(time_trial,event)~trt+calendar,
+       duration="duration",time="time",
+       method="exact",
+       search=list(exact="optimal"))
+```
+
+Print estimates
+
+```{r}
+bate=B$t0[1]
+lower=bate-1.96*sd(B$t[,1])
+upper=bate+1.96*sd(B$t[,2])
+# converged proportion?
+mean(B$t[,2],na.rm=T)
+# check all
+B$t
+```
+
+##### by hand
+
+```{r,eval=FALSE}
+# set iterations
+B=5
+# collect estimates
+rrs=c()
+# loop through
+for (i in 1:B){
+  # resample ids
+  idx=sample(nrow(dftrial), size = nrow(dftrial), replace = TRUE)
+  # resample
+  dfboot=dftrial[idx,]
+  # redefine ids
+  dfboot=dfboot %>% mutate(id=row_number())
+  # run matching
+  matched=matching(data=dfboot,treatment=trt,ageofonset=ageonset,sex=sex,
+                   duration=duration,time=time,method='optimal',
+                   caliper=NULL,step=NULL,maxcaliper=NULL,
+                   #caliper=0.5,step=0.1,maxcaliper=0.5,
+                   ratio=2,
+                   replacement=F,history=F,warning=T)
+  # extract dataset
+  matcheddf=matched$dataset
+  # model
+  model=coxph(Surv(time_trial,event)~trt+calendar,x=T,
+              data=matcheddf,robust=T,cluster=cluster)
+  # caclulate risk ratio
+  rr=risk_ratio(matcheddf,model=model,
+                treatment="trt",estimand="ATT",landmark=730)
+  # append
+  rrs=c(rrs,rr)
+}
+```
+
+## PSM
+
+### glm
+
+#### single procedure
+
+```{r}
+matched=psm_matching(data=dftrial,
+                     formula=trt~ageonset+sex,
+                     ratio=2,
+                     replacement=F,
+                     distance='glm',
+                     method='optimal',
+                     #tune=TRUE,
+                     #caliper=0.1,
+                     duration=duration,
+                     time=time)
+# extract dataset
+matcheddf=matched$dataset %>% 
+  select(id,cluster,trt,time_trial,event,calendar) %>% 
+  mutate(event=ifelse(time_trial>730,0,event),
+         time_trial=ifelse(time_trial>730,730,time_trial))
+# number of treated and untreated
+table(matcheddf$trt)
+```
+
+#### Point estimate
+
+Run model
+
+```{r}
+model=coxph(Surv(time_trial,event)~trt+calendar,x=T,
+              data=matcheddf,robust=T,cluster=cluster)
+```
+
+Point estimate
+
+```{r}
+rr=risk_ratio(matcheddf,model=model,treatment="trt",estimand="ATT",landmark=730)
+```
+
+#### bootstrap procedure
+
+##### boot pacckage
+
+```{r}
+B=boot(data=dftrial,
+       R=5,
+       strata=dftrial[["trt"]],
+       full_data=dftrial,
+       statistic=boot_matching,
+       landmark=730,
+       estimate="surv_rr",
+       estimand="ATT",
+       treatment_model=trt~ageonset+sex,
+       outcome_model=Surv(time_trial,event)~trt+calendar,
+       duration="duration",time="time",
+       method="psm",search=list(psm="optimal"),
+       psm_arguments=list(caliper=NULL,
+                          distance="glm",
+                          seed=123,tune=FALSE))
+```
+
+Print estimates
+
+```{r}
+bate=B$t0[1]
+lower=bate-1.96*sd(B$t[B$t[,2]==1,1])
+upper=bate+1.96*sd(B$t[B$t[,2]==1,1])
+# check all
+B$t
+```
+
+##### by hand
+
+```{r}
+# parameters
+betas=c(); B=5; nuntrt=c(); ntrt=c(); n=c(); rrs=c()
+# loop
+for (b in 1:B){
+  # resample ids
+  ## treated
+  dfboot_trt=dftrial %>%
+    filter(trt == 1) %>%
+    slice_sample(n = 20, replace = TRUE)
+  ## untreated
+  dfboot_untrt=dftrial %>%
+    filter(trt == 0) %>%
+    slice_sample(n = 50, replace = TRUE)
+  # bind together
+  dfboot=bind_rows(dfboot_trt, dfboot_untrt) %>%
+    mutate(id = row_number())
+  # redefine ids
+  dfboot=dfboot %>% mutate(id=row_number())
+  # run matching
+    ## own function
+  matched=psm_matching(data=dfboot,
+                       formula=trt~ageonset+sex,
+                       ratio=2,
+                       replacement=F,
+                       distance='mahalanobis',
+                       method='optimal',
+                       duration=duration,
+                       time=time)
+  ## extract dataset
+  matcheddfp=matched$dataset
+  # model
+  model=coxph(Surv(time_trial,event)~trt+calendar,x=T,
+              data=matcheddfp,robust=T,cluster=cluster)
+  ## append quantities
+  n=c(n,nrow(matcheddfp)); nuntrt=c(nuntrt,table(matcheddfp$trt)[1]); 
+  ntrt=c(ntrt,table(matcheddfp$trt)[2]);   betas=c(betas,coef(model)[1])
+  rrs=c(rrs,
+        risk_ratio(matcheddfp,model=model,
+                   treatment="trt",estimand='ATT',landmark=730))
+}
+betas; rrs
+```
+
+### random forest
+
+#### single procedure
+
+```{r}
+matched=psm_matching(data=dftrial,
+                     formula=trt~ageonset+I(ageonset^2)+sex,
+                     ratio=2,
+                     replacement=F,
+                     distance='random forest',
+                     method='optimal',
+                     tune=FALSE,
+                     caliper=NULL,
+                     duration=duration,
+                     time=time)
+# extract dataset
+matcheddf=matched$dataset
+```
+
+#### Point estimate
+
+Run model
+
+```{r}
+model=coxph(Surv(time_trial,event)~trt+calendar,x=T,model=T,
+              data=matcheddf,robust=T,cluster=cluster)
+```
+
+Point estimate
+
+```{r}
+rr=risk_ratio(data=matcheddf,model=model,
+              treatment="trt",estimand="ATT",landmark=730)
+```
+
+#### bootstrap procedure
+
+```{r}
+B=boot(data=dftrial,
+       R=5,
+       full_data=dftrial,
+       statistic=boot_matching,
+       ratio=2,
+       estimate="surv_rr",
+       estimand="ATT",
+       search=list(psm="optimal"),
+       treatment_model=trt~ageonset+sex,
+       outcome_model=Surv(time_trial,event)~trt+calendar,
+       duration="duration",time="time",
+       psm_arguments=list(caliper=NULL,
+                          tune=TRUE,
+                          seed=181299,
+                          distance="random forest"),
+       method="psm")
+```
+
+Print estimates
+
+```{r}
+bate=B$t0[1]
+lower=bate-1.96*sd(B$t[B$t[,2]==1,1])
+upper=bate+1.96*sd(B$t[B$t[,2]==1,1])
+# check all
+B$t
+```
+
+### mahalanobis
+
+#### single procedure
+
+```{r}
+matched=psm_matching(data=dftrial,
+                     formula=trt~ageonset+sex,
+                     ratio=2,
+                     replacement=F,
+                     distance='mahalanobis',
+                     method='optimal',
+                     #tune=TRUE,
+                     #caliper=0.1,
+                     duration=duration,
+                     time=time)
+# extract dataset
+matcheddf=matched$dataset
+```
+
+#### Point estimate
+
+Run model
+
+```{r}
+model=coxph(Surv(time_trial,event)~trt+calendar,x=T,
+              data=matcheddf,robust=T,cluster=cluster)
+```
+
+Point estimate
+
+```{r}
+rr=risk_ratio(data=matcheddf,model=model,
+              treatment="trt",estimand="ATT",landmark=730)
+```
+
+### bootstrap procedure
+
+```{r}
+B=boot(data=dftrial,
+       R=5,
+       strata=dftrial[["trt"]],
+       #indices=1:nrow(dftrial),
+       full_data=dftrial,
+       #replacement=T,
+       statistic=boot_matching,
+       estimand="ATT",
+       ratio=2,
+       landmark=730,
+       estimate="surv_rr",
+       search=list(psm="optimal"),
+       treatment_model=trt~ageonset+I(ageonset^2)+sex,
+       outcome_model=Surv(time_trial,event)~trt+calendar,
+       duration="duration",time="time",
+       psm_arguments=list(tune=FALSE,distance="mahalanobis",caliper=NULL),
+       method="psm")
+```
+
+Print estimates
+
+```{r}
+bate=B$t0[1]
+lower=bate-1.96*sd(B$t[,1])
+upper=bate+1.96*sd(B$t[,1])
+# converged proportion?
+sum(B$t[,2])/length(B$t[,2])
+# see all runs
+B$t
+```
+
+#### by hand
+
+```{r}
+# parameters
+betas=c(); B=5; nuntrt=c(); ntrt=c(); n=c(); rrs=c()
+# loop
+for (b in 1:B){
+  # resample ids
+  ## treated
+  dfboot_trt=dftrial %>%
+    filter(trt == 1) %>%
+    slice_sample(n = 20, replace = TRUE)
+  ## untreated
+  dfboot_untrt=dftrial %>%
+    filter(trt == 0) %>%
+    slice_sample(n = 50, replace = TRUE)
+  # bind together
+  dfboot=bind_rows(dfboot_trt, dfboot_untrt) %>%
+    mutate(id = row_number())
+  # redefine ids
+  dfboot=dfboot %>% mutate(id=row_number())
+  # run matching
+    ## own function
+  matched=psm_matching(data=dfboot,
+                       formula=trt~ageonset+sex,
+                       ratio=2,
+                       replacement=F,
+                       distance='mahalanobis',
+                       method='optimal',
+                       duration=duration,
+                       time=time)
+  ## extract dataset
+  matcheddfp=matched$dataset
+  # model
+  model=coxph(Surv(time_trial,event)~trt+calendar,x=T,
+              data=matcheddfp,robust=T,cluster=cluster)
+  ## append quantities
+  n=c(n,nrow(matcheddfp)); nuntrt=c(nuntrt,table(matcheddfp$trt)[1]); 
+  ntrt=c(ntrt,table(matcheddfp$trt)[2]);   betas=c(betas,coef(model)[1])
+  rrs=c(rrs,
+        risk_ratio(matcheddfp,model=model,
+                   treatment="trt",estimand='ATT',landmark=730))
+}
+```
+
+# knitr
+
+```{r}
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\with duration\\time_to_event\\risk\\single_methods\\single_methods.qmd")
+```

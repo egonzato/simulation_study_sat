@@ -1,0 +1,388 @@
+---
+title: "single_methods"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(dplyr,tidyr,tidyverse,ggplot2,lpSolve,MatchIt,
+               optmatch,ipw,lme4,lmerTest,emmeans,boot,randomForest)
+```
+
+# Source functions
+
+```{r}
+function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\without duration",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
+for (i in 1:length(function_dirs)){
+  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+sapply(files, source)
+}
+```
+
+# Load dataset
+
+```{r,warning=FALSE}
+df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\continuous\\population_diff_0.15.rds") %>% 
+  filter(timen<=2) %>% 
+  select(id,timen,trt_overall,trt,aoo,sex,hui_linear_trt,yoo) %>% 
+  group_by(id,trt) %>% 
+  filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9)))) %>% 
+  ungroup()
+```
+
+## Create dftrial
+
+```{r}
+set.seed(03111963)
+# sample with function
+trialdf=trial_sampler(full_data=df,treatment=trt_overall,id=id,ntrt=20,nctrl=50)%>%
+  group_by(id) %>% 
+  mutate(id=cur_group_id()) %>% ungroup()
+# number of people selected in each dataset
+length(unique(df$id));length(unique(trialdf$id))
+# sample trialdf
+boot_trialdf=bootstrap_sampler(trialdf,id=id,treatment=trt,ntrt=20,nctrl=50)
+```
+
+Create baseline df
+
+```{r}
+baseline=trialdf %>% 
+  group_by(id) %>% 
+  filter(row_number()==1) %>% 
+  ungroup()
+```
+
+Plot all seventy patients
+
+```{r}
+# plot cluster without baseline
+trialdf %>% 
+  #filter(cluster == 3) %>% 
+  filter(timen<=2) %>% 
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~trt)+
+  theme_bw()
+```
+
+
+# Methods
+
+## Exact matching
+
+### Single procedure
+
+```{r}
+matched=matching(data=baseline,treatment=trt_overall,ageofonset=aoo,sex=sex,
+                 duration=NULL,time=timen,method='greedy',
+                 #caliper=NULL,step=NULL,maxcaliper=NULL,
+                 caliper=0.5,step=0.1,maxcaliper=0.5,ratio=2,
+                 replacement=F,history=F,warning=T)
+# inspect
+matcheddf=matched$dataset
+# get data out and keep only cluster and id
+matches = matched$dataset %>%
+  mutate(id = baseline$id[id],
+         cluster = baseline$id[cluster]) %>%
+  select(id, cluster)
+# now merge
+trialdf_matched=inner_join(trialdf, matches, by = "id") 
+# delete baseline measurement
+trialdf_analysis=trialdf_matched %>%
+  arrange(id, timen) %>% 
+  group_by(id) %>% 
+  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  filter(row_number()!=1) %>% 
+  ungroup()
+```
+
+Difference in baseline
+
+```{r}
+# mean difference in hui_baseline
+trialdf_analysis %>% 
+  group_by(id) %>% 
+  filter(row_number()==1) %>% 
+  ungroup() %>% 
+  group_by(trt) %>% 
+  summarise(mean=mean(hui_baseline),
+            sd=sd(hui_baseline))
+# test
+t.test(
+  hui_baseline ~ trt,
+  data = trialdf_analysis %>%
+  group_by(id) %>%
+  filter(row_number() == 1) %>%
+  ungroup(),
+  var.equal = TRUE)
+```
+
+
+Run model and marginalize
+
+```{r}
+# model
+trial=trialdf_analysis %>% 
+  lmer(hui_linear_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
+# marginalize
+estimand=emmeans(trial, ~ trt | timen,
+                              at = list(timen=2),
+                 cov.reduce=list(yoo=mean))
+# see contrast
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
+```
+
+```{r}
+# select random cluster
+clusters=sample(unique(trialdf_matched$cluster),5)
+# table
+table(trialdf_matched$trt_overall)
+# plot cluster without baseline
+trialdf_analysis %>% 
+  #filter(cluster == 3) %>% 
+  #filter(timen<=2) %>% 
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+# plot cluster with baseline
+trialdf_matched %>% 
+  #filter(cluster == 3) %>% 
+  #filter(timen<=2) %>% 
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+```
+
+## Propensity score methods
+
+### Probability
+
+#### Single procedure
+
+```{r}
+matched=psm_matching(data=baseline,
+                     formula=trt~aoo+sex,
+                     ratio=2,
+                     replacement=F,
+                     distance='glm',
+                     method='optimal',
+                     #tune=TRUE,
+                     #caliper=0.1,
+                     duration=NULL,
+                     time=timen)
+# get matches
+matches = matched$dataset %>%
+  mutate(id = baseline$id[id],
+         cluster = baseline$id[cluster]) %>%
+  select(id, cluster)
+# then merge
+trialdf_matched = inner_join(trialdf, matches, by = "id") 
+# delete baseline measurement
+trialdf_analysis=trialdf_matched %>%
+  arrange(id, timen) %>% 
+  group_by(id) %>% 
+  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  filter(row_number()!=1) %>% 
+  ungroup()
+```
+
+Plot
+
+```{r}
+# select random cluster
+clusters=sample(unique(trialdf_matched$cluster),5)
+# table
+table(trialdf_matched$trt_overall)
+# plot cluster with baseline
+trialdf_matched %>% 
+  #filter(cluster %in% clusters) %>% 
+  #filter(timen<=2) %>% 
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+# plot cluster without baseline
+trialdf_analysis %>% 
+  #filter(cluster %in% clusters) %>% 
+  #filter(timen<=2) %>% 
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+```
+
+Run model and marginalize
+
+```{r}
+# model
+trial=trialdf_analysis %>% 
+  lmer(hui_linear_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
+# marginalize
+estimand=emmeans(trial, ~ trt | timen,
+                              at = list(timen=2),
+                 cov.reduce=list(yoo=mean))
+# see contrast
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
+```
+
+### Mahalanobis
+
+#### Single procedure
+
+```{r}
+matched=psm_matching(data=baseline,
+                     formula=trt~aoo+sex,
+                     ratio=2,
+                     replacement=F,
+                     distance='mahalanobis',
+                     method='optimal',
+                     #tune=TRUE,
+                     #caliper=0.1,
+                     duration=NULL,
+                     time=timen)
+# get matches
+matches = matched$dataset %>%
+  mutate(id = baseline$id[id],
+         cluster = baseline$id[cluster]) %>%
+  select(id, cluster)
+# then merge
+trialdf_matched = inner_join(trialdf, matches, by = "id") 
+# delete baseline measurement
+trialdf_analysis=trialdf_matched %>%
+  arrange(id, timen) %>% 
+  group_by(id) %>% 
+  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  filter(row_number()!=1) %>% 
+  ungroup()
+```
+
+Run model and marginalize
+
+```{r}
+# model
+trial=trialdf_analysis %>% 
+  lmer(hui_linear_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
+# marginalize
+estimand=emmeans(trial, ~ trt | timen,
+                              at = list(timen=2),
+                 cov.reduce=list(yoo=mean))
+# see contrast
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
+```
+
+Plot
+
+```{r}
+# select random cluster
+clusters=sample(unique(trialdf_matched$cluster),5)
+# table
+table(trialdf_matched$trt_overall)
+# plot cluster with baseline
+trialdf_matched %>% 
+  #filter(cluster %in% clusters) %>% 
+  #filter(timen<=2) %>% 
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+# plot cluster without baseline
+trialdf_analysis %>% 
+  #filter(cluster %in% clusters) %>% 
+  #filter(timen<=2) %>% 
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+```
+
+## IPTW
+
+### Single procedure
+
+Calculate weights
+
+```{r}
+weights=iptw(data=baseline,estimand="ATT",
+             formula=trt_overall~aoo+sex)
+# extract weights
+dataw=weights$data %>% 
+  select(id,w)
+# merge dataset
+trialdfw=merge(trialdf,dataw,by='id')
+```
+
+Model
+
+```{r}
+options(scipen=999)
+fit=trialdfw %>% 
+  group_by(id) %>% 
+  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  filter(row_number()!=1) %>% 
+  ungroup() %>% 
+  filter(timen<=2) %>% 
+  lmer(hui_linear_trt~(1|id)+hui_baseline+trt_overall*timen+yoo,weights = w,data=.)
+```
+
+Predict
+
+```{r}
+estimand=emmeans(fit, ~ trt_overall | timen,
+                              at = list(timen=2),
+                 cov.reduce=list(yoo=mean))
+# see contrast
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
+```
+
+## gcomp
+
+### Single procedure
+
+```{r}
+ate=gcomp(trialdf %>% 
+            group_by(id) %>% 
+            mutate(hui_baseline=first(hui_linear_trt)) %>% 
+            filter(row_number()!=1) %>% 
+            ungroup() %>% 
+            filter(timen<=2),
+          estimate="ate",
+          estimand="ATT",
+          treatment="trt_overall",
+          time="timen",
+          formula=hui_linear_trt~(1|id)+hui_baseline+trt_overall*timen+aoo+sex+yoo,
+          landmark=2)
+```
+
+# purl
+
+```{r}
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\without duration\\continuous\\single_methods\\single_methods.qmd")
+```

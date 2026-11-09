@@ -1,0 +1,145 @@
+---
+title: "tune"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(dplyr,lubridate)
+```
+
+# Source functions
+
+```{r}
+function_dirs = c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\time_to_event")
+for (i in seq_along(function_dirs)) {
+  files = list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+  sapply(files, source)
+}
+```
+
+# Simulate data
+
+Dates
+
+```{r}
+options(scipen = 999)
+set.seed(3111963)
+# define N
+n=1e5
+# define start and end of registry
+start_date=as.Date("2005-01-01")
+end_date=as.Date("2022-12-31")
+max_days=as.numeric(end_date - start_date)
+# simulate dates
+backward_days=rtruncexp(n=n,
+                        rate=0.0002,
+                        max=max_days)
+# calculate onset date
+onsetdatev=end_date-floor(backward_days)
+```
+
+Covariates
+
+```{r}
+df=data.frame(id=1:n,
+              onsetdate=onsetdatev,
+              ageonset=runif(n,0.5,6),
+              u=runif(n,0,1),
+              e=rnorm(n,0.5,0.02),
+              z=rexp(n),
+              sex=sample(c('male','female'),n,replace=T)) %>% 
+  mutate(calendar_c=year(onsetdate)-mean(year(onsetdate)),
+         trialdate=as.Date('2021-05-31'))
+pzero=0.5
+taud=2*365.25
+```
+
+# Tune
+
+## Build filtered dataset
+
+```{r}
+prep_wait = function(df, t_int, t_age, t_sex){
+  df %>% 
+    mutate(ptrt     = plogis(t_int - t_age*ageonset + t_sex*(sex=="male")),
+           eligible = stopdate >= trialdate,       
+           trt      = as.integer(u < ptrt & eligible),
+           duration = ifelse(trt==1, trialdate-onsetdate, round(timedays))) %>% 
+    filter(duration > 0)
+}
+```
+
+## Bias after matching
+
+```{r}
+bias_wait = function(d, t = 730){
+  tr = d[d$trt == 1, ]
+  ct = d[d$trt == 0, ]
+
+  # controls sorted by survival time, with suffix sums of their risk
+  o      = order(ct$timedays)
+  tc     = ct$timedays[o]
+  rc     = (1 - exp(-ct$hazard * t/30))[o]
+  suffix = c(rev(cumsum(rev(rc))), 0)
+  N      = length(tc)
+
+  # for each treated wait w: controls still alive (timedays > w)
+  idx  = findInterval(tr$duration, tc)      # number of controls with timedays <= w
+  n_el = N - idx
+  ok   = n_el > 0                           # treated with at least one alive control
+
+  risk_ctrl = mean(suffix[idx[ok] + 1] / n_el[ok])
+  risk_trt0 = mean(1 - exp(-tr$hazard[ok] * t/30))
+  risk_trt0 / risk_ctrl - 1                 # naive RR / true RR - 1
+}
+```
+
+## SMDs bias
+
+```{r}
+get_targets_wait = function(df, t_int, t_age, t_sex){
+  d = prep_wait(df, t_int, t_age, t_sex)
+  c(smd_age  = abs(smd::smd(d$ageonset, d$trt)$estimate),
+    smd_sex  = abs(smd::smd(d$sex, d$trt)$estimate),
+    rel_bias = bias_wait(d))
+}
+```
+
+## Solve for the treatment and outcome parameters
+
+```{r}
+make_hazard = function(df, s){
+  lp  = s*(-0.43*df$ageonset + 0.28*(df$sex=="male")) - 0.01*df$calendar_c + df$e
+  lam = uniroot(function(l) mean(1 - exp(-l*exp(lp)*taud/30)) - pzero,
+                interval=c(0,1e15), tol=1e-12)$root
+  df %>% mutate(hazard   = lam*exp(lp),
+                timedays = z/hazard*30,
+                stopdate = onsetdate + timedays)
+}
+
+get_targets_wait = function(df, t_int, t_age, t_sex, s){
+  d = prep_wait(make_hazard(df, s), t_int, t_age, t_sex)
+  c(smd_age  = abs(smd::smd(d$ageonset, d$trt)$estimate),
+    smd_sex  = abs(smd::smd(d$sex, d$trt)$estimate),
+    rel_bias = bias_wait(d))
+}
+
+solve_wait = function(df, target_smd_age, target_smd_sex, target_bias,
+                      t_int = 1, start = c(0.97, 1.9, 0.6)){
+  target = c(target_smd_age, target_smd_sex, target_bias)
+  obj = function(par) sum((get_targets_wait(df, t_int, par[1], par[2], par[3]) - target)^2)
+  o = optim(start, obj, method="Nelder-Mead", control=list(reltol=1e-10, maxit=1000))
+  c(t_int=t_int, t_age=o$par[1], t_sex=o$par[2], s=o$par[3], loss=o$value)
+}
+```
+
+## Get values given targets
+
+```{r}
+par = solve_wait(df, 0.5, 0.5, 0.20)
+par
+get_targets_wait(df, par["t_int"], par["t_age"], par["t_sex"], par["s"])
+```

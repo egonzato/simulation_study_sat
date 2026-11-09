@@ -1,0 +1,151 @@
+---
+title: "prove"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,smd,WeightIt,lme4,
+               emmeans,randomForest,survival,ggsurvfit,survminer,MatchIt,boot,
+               foreach,doParallel,doRNG,future,progressr,doFuture)
+```
+
+# Load dataset
+
+```{r}
+pop=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\continuous\\population_diff_0.15.rds") %>% 
+  filter(timen<=2) %>% 
+  select(id,timen,trt_overall,trt,aoo,sex,hui_linear_trt,yoo) %>% 
+  group_by(id,trt) %>% 
+  filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9)))) %>% 
+  ungroup()
+```
+
+# Source function
+
+```{r}
+function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\without duration",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
+for (i in 1:length(function_dirs)){
+  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+sapply(files, source)
+}
+```
+
+# Sample trial data
+
+## Point estimate
+
+```{r}
+set.seed(03111963)
+trialdf=trial_sampler(pop,id,trt,20,50) %>% 
+  group_by(id) %>% 
+  mutate(id=cur_group_id())
+```
+
+## Boostrapping
+
+```{r}
+boot_sample=bootstrap_sampler(trialdf,id,trt,20,50)
+```
+
+# Matching
+
+Define methods
+
+```{r}
+grid=c("exact_greedy","exact_optimal",
+                   "psm_p_greedy_noc","psm_p_greedy_caliper_01","psm_p_greedy_caliper_005",
+                   "psm_m_greedy_noc","psm_m_greedy_caliper_01","psm_m_greedy_caliper_005",
+                   "psm_p_optimal","psm_m_optimal")
+```
+
+## Point estimate
+
+Run matching procedure
+
+```{r,eval=FALSE}
+matched=matching_call(data=trialdf,id,ratio=1,methods=grid[1])
+```
+
+Run model
+
+```{r}
+point=run_all_matching(data=trialdf,ratio=2,methods=grid)
+```
+
+## Bootstrapping
+
+Loop
+
+```{r}
+B=3;points=data.frame()
+for (b in 1:B){
+  # bootstrap from dataset
+  boot_sample=bootstrap_sampler(trialdf,id,trt,20,50)
+  # run procedures
+  point=run_all_matching(data=boot_sample,id=id,ratio=2,methods=grid)
+  # attach number of iteration
+  point$b=b
+  # bind
+  points=bind_rows(points,point)
+}
+```
+
+# Not matching
+
+## Point estimate
+
+Methods
+
+```{r}
+methods=c("raw",
+          "iptw, unstabilised","iptw, stabilised, truncated 0.1","iptw, stabilised, truncated 0.01",
+          "gcomp")
+```
+
+Prepare data
+
+```{r}
+preprocess=regression_call(data=trialdf,id=id,methods=methods[2])
+```
+
+Run one procedure
+
+```{r}
+example=analyse_call(data=preprocess,
+                     methods=methods[2])
+```
+
+Run all together
+
+```{r}
+examples = run_all_regression(data = trialdf,
+                              id=id,
+                              methods = methods,
+                              landmark = 2)
+```
+
+## Bootstrapping
+
+Loop
+
+```{r}
+B=3;points=data.frame()
+for (b in 1:B){
+  # bootstrap from dataset
+  boot_sample=bootstrap_sampler(trialdf,id,trt,20,50)
+  # run procedures
+  point=run_all_regression(data = boot_sample,
+                              id=id,
+                              methods = methods,
+                              landmark = 2)
+  # attach number of iteration
+  point$b=b
+  # bind
+  points=bind_rows(points,point)
+}
+```

@@ -1,0 +1,75 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(ggplot2,dplyr)
+```
+
+# Data
+
+## Power
+
+Create grid
+
+```{r}
+mcse=expand.grid(p=seq(0.5,1,0.05),
+                 R=c(500,1000,2000,5000)) %>% 
+  mutate(mcse=sqrt((p*(1-p))/R),
+         margin=1.96*mcse)
+```
+
+Plot
+
+```{r}
+# mcse
+mcse %>% 
+  mutate(R=as.factor(R)) %>% 
+  ggplot(.,aes(mcse,p,group=R,color=R))+
+  geom_line()+
+  geom_point()+
+  geom_hline(yintercept=0.8,lty=2)+
+  theme_bw()
+# margin
+mcse %>% 
+  mutate(R=as.factor(R)) %>% 
+  ggplot(.,aes(margin,p,group=R,color=R))+
+  geom_line()+
+  geom_point()+
+  geom_hline(yintercept=0.8,lty=2)+
+  theme_bw()
+```
+
+## Type I error
+
+```{r}
+typei=expand.grid(p=seq(0,0.1,0.01),
+                 R=c(500,1000,2000,5000)) %>% 
+  mutate(mcse=sqrt((p*(1-p))/R),
+         margin=mcse*1.96)
+```
+
+Plot
+
+```{r}
+# typei
+typei %>% 
+  mutate(R=as.factor(R)) %>% 
+  ggplot(.,aes(mcse,p,group=R,color=R))+
+  geom_line()+
+  geom_point()+
+  geom_hline(yintercept=0.05,lty=2)+
+  theme_bw()
+# margin
+typei %>% 
+  mutate(R=as.factor(R)) %>% 
+  ggplot(.,aes(margin,p,group=R,color=R))+
+  geom_line()+
+  geom_point()+
+  geom_hline(yintercept=0.05,lty=2)+
+  theme_bw()
+```

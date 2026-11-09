@@ -1,0 +1,318 @@
+## -----------------------------------------------------------------------------------------------------------------------------
+pacman::p_load(dplyr,ggplot2,lubridate,ipw,emmeans,marginaleffects,
+               lpSolve,randomForest,
+               optmatch,lme4,lmerTest,ggdag,RColorBrewer,MatchIt,lubridate)
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+# define coordinates in the space
+coord_dag=list(x = c(hui=3,aoo=0.8,yoo=3,t=3,sex=0.8,trt=1.5),
+               y = c(hui=0,aoo=1,yoo=1.5,t=-1,sex=0,trt=1.5))
+# define colors
+col=brewer.pal(1, 'Set1')
+red=col[1]
+blue=col[2]
+green=col[3]
+yellow=col[6]
+# relationship between vars
+model=dagify(hui~t+aoo+sex+yoo+trt,
+             aoo~sex,
+             trt~aoo+yoo+sex,
+             coords = coord_dag,
+             outcome='hui',
+             exposure='trt',
+             labels = c("aoo"="aoo", 
+                        "yoo"="yoo",
+                        "hui"="hui",
+                        "trt"="trt",
+                        "sex" = "sex",
+                        "t"="t")) %>% 
+  tidy_dagitty() %>%
+  mutate(Variable = case_when(name == 'trt' ~ 'Exposure',
+                              name == 'hui' ~ 'Outcome',
+                              T~ "Observed"))
+# plot DAG
+ggdag(model, text = T, text_size = 3, text_col = 'white', edge_type = "link_arc",node_size=12)+
+  #geom_dag_point(color = "grey", show.legend = T)+
+ # ggdag_paths(model,shadow = T)+
+  geom_dag_point(aes(colour = Variable))+
+  geom_dag_label_repel(aes(label = label), nudge_x = 2,nudge_y = 5) +
+  scale_color_manual(values=c(blue,green,red,'grey'))+
+  theme_dag()+
+  guides(color = guide_legend(override.aes = list(size = 2)))
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+set.seed(181299)
+n=1000
+sex=rbinom(n,1,0.5); sex_label=ifelse(sex==1,'female','male')
+aoo=ifelse(sex_label=='female',rnorm(n,4,0.7),rnorm(n,2,0.7))
+dayonset=sample(9500:20000,n,replace=T) 
+id=1:n
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+covs=data.frame(id=id,sex=sex,sex_label=sex_label,aoo=aoo,dayonset=dayonset)
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+set.seed(181299)
+t=seq(0,4380,by=182.625)
+# expand time
+tid=expand.grid(id=id,time=t)
+# merge with covariates
+df=merge(covs,tid,by='id') %>% 
+  arrange(id,time) %>% 
+  mutate(terr=ifelse(time==0,0,runif(n,0,+180)),
+         dateonset=as.Date(dayonset),
+         date=dateonset+time+terr,
+         yoo=year(dateonset),
+         timen=as.numeric(date-dateonset)/365.25)
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+b0=0.95-(0.018*mean(df$sex)+0.042*mean(df$aoo)+0.0002*mean(df$yoo))
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+set.seed(181299)
+df=df %>% 
+  group_by(id) %>% 
+  mutate(row=row_number(),
+         u0 = rnorm(1,0,0.07),         
+         epsilon = rnorm(n(),0,0.08))
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+df=df %>% 
+  mutate(hui_linear_untrt = ifelse(time==0,
+                                   0.95,
+                                   (b0+u0)+ 0.018*sex + 0.042*aoo + 0.0002*yoo -0.12*timen +epsilon)) %>% 
+  filter(hui_linear_untrt>=-0.5)
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+# random draw
+ids=sample(unique(df$id),15)
+# plot those random individuals
+df %>% 
+  filter(id %in% ids) %>% 
+  ggplot(.,aes(x=timen,y=hui_linear_untrt,group=id))+
+  geom_point()+
+  geom_line()+
+  labs(x='Disease duration',y='HUI (quadratic)')+
+  geom_hline(yintercept=-0.5,lty=2)+
+  theme_bw()
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+# random draw
+ids=sample(unique(df$id),15)
+# plot those random individuals
+df %>% 
+  filter(id %in% ids) %>% 
+  ggplot(.,aes(x=date,y=hui_linear_untrt,group=id))+
+  geom_point()+
+  geom_line()+
+  labs(x='Disease duration',y='HUI (linear)')+
+  geom_hline(yintercept=-0.5,lty=2)+
+  theme_bw()
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+# set trial date
+df$trialdate=as.Date('2019-05-01')
+# simulate probability of treatment
+df=df %>% 
+  group_by(id) %>% 
+  mutate(trt_yoo=ifelse(date>=trialdate,1,0),
+         ptrt_conf=1/(1+exp(-(-2.2 + 0.3*aoo + 0.25*sex))),
+         trt_conf=rbinom(1,1,ptrt_conf),
+         trt=ifelse(trt_conf == 1 & trt_yoo == 1,1,0))
+# see distribution of covariates
+hist(df$ptrt_conf,col='white',
+     main='Distribution of P(T|X)',
+     xlab='Probability')
+range(df$ptrt_conf)
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+df=df %>% 
+  group_by(id) %>% 
+  mutate(trt_overall=ifelse(sum(trt)>=1,1,0))
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+df=df %>% 
+  arrange(desc(trt_overall),id,date) %>% 
+  group_by(id) %>%
+  mutate(lastvisit=max(date),
+         starttrial=as.Date(ifelse(any(trt == 1),
+                              min(date[trt == 1], na.rm = TRUE),
+                              as.Date(NA)))) %>%
+  ungroup()
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+df=df %>% 
+  arrange(id, date) %>% 
+  group_by(id)                       
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+for (i in 2:nrow(df)){
+  if (df$trt[i]==1 & df$id[i]==df$id[i-1] & df$date[i]!=df$starttrial[i]){
+    df$date[i]=df$date[i-1]+90
+  } 
+}
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+dftime=df %>% 
+  filter(trt_overall==1) %>% 
+  select(id,date,starttrial,trt,trt_overall)
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+df=df %>% 
+  mutate(timen=as.numeric(date-dateonset)/365.25,
+         timen_trt=ifelse(trt==0,
+                          0,
+                          as.numeric(date-starttrial)/365.25),
+         hui_linear_trt=hui_linear_untrt+0*trt+0.05*trt*timen_trt,
+         hui_linear_trt_over=hui_linear_untrt+0*trt+0.05*trt*timen) %>% 
+  group_by(id,trt) %>% 
+  filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9)))) 
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+set.seed(181299)
+df=df %>% 
+  mutate(pmiss=ifelse(trt==1 | time==0 ,0,0.4),
+         miss=rbinom(n(),1,pmiss)) %>% 
+  group_by(id) %>% 
+  mutate(flag=ifelse(trt_overall==1 & sum(trt)<6,1,0),
+         lastdate=max(date))%>%
+  ungroup() %>% 
+  filter(flag==0) 
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+# sample one id
+singleid=sample(unique(df$id[which(df$trt == 1)]),1)
+# plot
+df %>% 
+  mutate(trt=as.factor(trt)) %>% 
+  #filter(id %in% singleid) %>%
+  #filter(miss==0) %>% 
+  filter(trt_overall==1) %>% 
+  ggplot() +
+  #geom_point(aes(x = date, y = hui_linear_trt_over), col = 'black') +
+  #geom_line(aes(x = date, y = hui_linear_trt_over), col = 'black') +
+  geom_point(aes(x = date, y = hui_linear_trt,group = id,col=trt)) +
+  geom_line(aes(x = date, y = hui_linear_trt,group = id,col=trt)) +
+  scale_color_manual(values=c('#FF3300','#0099FF'))+
+  #geom_point(aes(x = date, y = hui_linear_untrt), col = '#FF3300') +
+  #geom_line(aes(x = date, y = hui_linear_untrt), col = '#FF3300') +
+  labs(x = 'Disease duration', y = 'HUI (linear)') +
+  geom_hline(yintercept = -0.5, lty = 2) +
+  theme_bw()
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+# set seed for reproducibility
+set.seed(18121999)
+# sample untreated
+untrtid=unique(df$id[which(df$trt_overall==0 & df$dateonset>='2014-05-01' & df$lastdate<'2027-05-01')])
+# sample treated
+trtid=unique(df$id[which(df$trt_overall==1 & df$dateonset< '2019-05-01')])
+# bind together
+ids=c(sample(untrtid,5),sample(trtid,10))
+# plot
+df %>% 
+  filter(trt_overall==1) %>% 
+  filter(miss==0) %>% 
+  filter(id %in% ids) %>%
+  mutate(trt=factor(trt)) %>% 
+  ggplot(.,aes(x=date,y=hui_linear_trt,group=id,col=trt))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  labs(x='Disease duration',y='HUI (linear)')+
+  scale_color_manual(values=c('#FF3300','#0099FF'))+
+  geom_hline(yintercept=-0.5,lty=2)+
+  geom_vline(xintercept = as.numeric(as.Date('2019-05-01')),lty=2)+
+  theme_bw()
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+# set seed for reproducibility
+set.seed(323232)
+# sample untreated
+untrtid=unique(df$id[which(df$trt_overall==0)])
+# sample treated
+trtid=unique(df$id[which(df$trt_overall==1)])
+# bind together
+ids=c(sample(untrtid,5),sample(trtid,5))
+# plot
+df %>% 
+  filter(miss==0) %>% 
+  filter(id %in% ids) %>%
+  mutate(trt_label=ifelse(trt==1,'GBZ treated patients','Historical controls')) %>%
+  ggplot(.,aes(x=date,y=hui_linear_trt,group=id,col=trt_label))+
+  geom_point()+
+  geom_line()+
+  #geom_smooth(formula = y ~ x,aes(group = 1), method = 'lm', se = FALSE) +
+  #facet_wrap(~trt_label)+
+  labs(x='Disease duration',y='HUI',col='Treatment group')+
+  geom_hline(yintercept=-0.5,lty=2)+
+  scale_color_manual(values=c('#0099FF','#FF3300'))+
+  theme_bw()+
+  guides(col='none')+
+  geom_vline(xintercept = as.numeric(as.Date('2021-05-01')),lty=2)+
+  theme(legend.position = 'bottom',
+        strip.background = element_rect(fill = "white", colour = "black"),
+        strip.text       = element_text(colour = "black") )
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+# set seed for reproducibility
+set.seed(11022004)
+# sample treated
+trtid=unique(df$id[which(df$trt_overall==1)])
+# bind together
+ids=c(sample(trtid,15))
+# plot
+df %>% 
+  filter(miss==0) %>% 
+  filter(id %in% ids) %>%
+  mutate(trt_label=ifelse(trt==1,'GBZ treated patients','Historical controls')) %>%
+  ggplot(.,aes(x=date,y=hui_linear_trt,group=id,col=trt_label))+
+  geom_point()+
+  geom_line()+
+  #geom_smooth(formula = y ~ x,aes(group = 1), method = 'lm', se = FALSE) +
+  #facet_wrap(~trt_label)+
+  labs(x='Disease duration',y='HUI (linear)',col='Treatment group')+
+  geom_hline(yintercept=-0.5,lty=2)+
+  scale_color_manual(values=c('#0099FF','#FF3300'))+
+  theme_bw()+
+  guides(col='none')+
+  theme(legend.position = 'bottom',
+        strip.background = element_rect(fill = "white", colour = "black"),
+        strip.text       = element_text(colour = "black") )
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+df=df %>% 
+  mutate(duration=ifelse(trt_overall==1,
+                         as.numeric(starttrial-dateonset)/365.25,
+                         as.numeric(lastvisit-dateonset)/365.25))
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+writexl::write_xlsx(df,"C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\population_hui_like_dur.xlsx")
+
+
+## -----------------------------------------------------------------------------------------------------------------------------
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\with duration\\continuous\\dgm\\hui_like_dur.qmd")
+

@@ -1,0 +1,97 @@
+---
+title: "prove"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,smd,WeightIt,lme4,
+               emmeans,
+               randomForest,survival,ggsurvfit,survminer,MatchIt,boot,
+               foreach,doParallel,doRNG,future,progressr,doFuture)
+```
+
+# Load dataset
+
+```{r}
+pop=read_xlsx("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\population_hui_like_dur.xlsx") %>% 
+  mutate(across(c(date,dateonset,starttrial,lastvisit,trialdate),as.Date)) %>% 
+  mutate(time=time/365.25) %>% 
+  filter(duration>0) %>% 
+  select(id,timen,trt,trt_overall,duration,aoo,sex,hui_linear_trt,timen,yoo)
+```
+
+# Source function
+
+```{r}
+function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\with duration",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
+for (i in 1:length(function_dirs)){
+  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+sapply(files, source)
+}
+```
+
+# Sample trial data
+
+## Point estimate
+
+```{r}
+set.seed(03111963)
+trialdf=trial_sampler(pop,id,trt_overall,20,50) %>% 
+  group_by(id) %>% 
+  mutate(id=cur_group_id())
+```
+
+## Boostrapping
+
+```{r}
+boot_sample=bootstrap_sampler(trialdf,id,trt_overall,20,50) %>% 
+  arrange(id,timen)
+```
+
+# Matching
+
+Define methods
+
+```{r}
+grid=c("duration_matching","exact_greedy","exact_optimal",
+                   "psm_p_greedy_noc","psm_p_greedy_caliper_01","psm_p_greedy_caliper_005",
+                   "psm_m_greedy_noc","psm_m_greedy_caliper_01","psm_m_greedy_caliper_005",
+                   "psm_p_optimal","psm_m_optimal")
+```
+
+## Point estimate
+
+Run matching procedure
+
+```{r,eval=FALSE}
+matched=matching_call(data=trialdf,id,ratio=1,methods=grid[1])
+```
+
+Run model
+
+```{r}
+point=run_all_matching(data=trialdf,ratio=2,methods=grid)
+```
+
+## Bootstrapping
+
+Loop
+
+```{r}
+B=3;points=data.frame()
+for (b in 1:B){
+  # bootstrap from dataset
+  boot_sample=bootstrap_sampler(trialdf,id,trt_overall,20,50)
+  # run procedures
+  point=run_all_matching(data=boot_sample,id=id,ratio=2,methods=grid)
+  # attach number of iteration
+  point$b=b
+  # bind
+  points=bind_rows(points,point)
+}
+```

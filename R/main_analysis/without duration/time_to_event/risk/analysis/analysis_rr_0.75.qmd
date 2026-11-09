@@ -1,0 +1,199 @@
+---
+title: "analysis"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,smd,WeightIt,
+               randomForest,survival,ggsurvfit,survminer,MatchIt,boot,
+               foreach,doParallel,doRNG,future,progressr,doFuture)
+```
+
+# Load dataset
+
+```{r}
+pop=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\time_to_event\\population_rr_0.75.xlsx")
+```
+
+# Source function
+
+```{r,warning=F}
+function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\time_to_event",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
+for (i in 1:length(function_dirs)){
+  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+sapply(files, source)
+}
+```
+
+# Loop
+
+## Parallelising
+
+### Grid for factorial design
+
+Smaller dataset
+
+```{r}
+# treated
+trt_slim = pop %>%
+  filter(trt == 1) %>%
+  select(id, ageonset, sex, calendar, event, timetotal, trt)
+# untreated
+untrt_slim = pop %>%
+  filter(trt == 0) %>%
+  select(id, ageonset, sex, calendar, event, timetotal, trt)
+```
+
+```{r,warning=F}
+# grid of combinations
+grid=expand.grid(ntrt=c(20,30,40),nctrl=c(50,100,150))
+#grid=expand.grid(ntrt=c(2000),nctrl=c(5000))
+ratio=c(1,2,3)
+regression_methods=c("raw",
+                     "iptw, unstabilised",
+                     "iptw, stabilised",
+                     "iptw, stabilised, truncated 0.01",
+                     "iptw, stabilised, truncated 0.1",
+                     "gcomp")
+matching_methods=c("exact_greedy",
+                   "exact_optimal",
+                   "psm_p_greedy_noc",
+                   "psm_p_greedy_caliper_01",
+                   "psm_p_greedy_caliper_005",
+                   "psm_m_greedy_noc","psm_m_greedy_caliper_01","psm_m_greedy_caliper_005",
+                   "psm_p_optimal","psm_m_optimal"
+                   )
+# set number of repetitions for iterations and bootstrap
+n_reps=2000; b_reps=1
+tasks=grid[rep(1:nrow(grid),each=n_reps),]
+tasks$rep=rep(1:n_reps,times=nrow(grid))
+total_steps=nrow(tasks)
+# register components to run in parallel
+options(future.globals.maxSize = 2 * 1024^3)
+registerDoFuture()
+plan(multisession, workers = parallel::detectCores()-1)
+handlers("progress")
+registerDoRNG(181299)
+# time 
+start.time=proc.time()
+# run loop
+with_progress({
+  # define number of steps
+  p=progressor(steps = total_steps)
+  # define results object
+  results=foreach(t=1:nrow(tasks), .combine = rbind,
+                     .packages = c("survival","MatchIt","boot",
+                                   "dplyr","smd","WeightIt",
+                                   "optmatch","lpSolve","randomForest"),
+                     .export = c("trt_slim","untrt_slim",
+                                 "matching","psm_matching","risk_ratio",
+                                 "trial_sampler","bootstrap_sampler",
+                                 "analyse_call",
+                                 "matching_call","regression_call",
+                                 "run_matching_methods","run_regression_methods",
+                                 "run_all_matching","run_all_regression")) %dopar% {
+      # define number of treated, untreated and ratio
+      ntrti=tasks$ntrt[t]
+      nctrli=tasks$nctrl[t]
+      # print to see where we are
+      p(sprintf("ntrt=%d, nctrl=%d, i=%d",ntrti,nctrli,tasks$rep[t]))
+      # sample
+      dftrial=trial_sampler(trtsubpop=trt_slim,
+                            ctrlsubpop=untrt_slim,
+                            ntrt=ntrti,
+                            nctrl=nctrli)
+      # smd before
+      smdageb=smd(dftrial$ageonset,dftrial$trt)$estimate
+      smdsexb=smd(dftrial$sex,dftrial$trt)$estimate
+      # available ratios=ratio
+      available=ratio[ntrti*ratio<=nctrli]
+      # run for point estimates
+      ## regression methods
+      point_regression=bind_rows(run_all_regression(data=dftrial,
+                                          methods=regression_methods,
+                                          landmark=730))
+      ## matching
+      point_matching=bind_rows(
+        lapply(available,function(ratioi){
+          run_all_matching(data=dftrial,
+                  ratio=ratioi,
+                  methods=matching_methods,
+                  landmark=730)
+        })
+      )
+      # bind together results
+      point_results=bind_rows(point_regression,point_matching)
+      # bootstrap
+      ## initialize list
+      bootstrap_results_regression=vector("list",b_reps)
+      bootstrap_results_matching=vector("list",b_reps)
+      ## loop
+      for (b in 1:b_reps){
+        # perform bootstrap
+        boot_data=bootstrap_sampler(data=dftrial,
+                                    treatment=trt,
+                                    ntrt=ntrti,
+                                    nctrl=nctrli)
+        # run all method on the same bootstrapped dataset
+        ## regression methods
+        bootstrap_results_regression[[b]]=bind_rows(
+          run_all_regression(data=boot_data,
+                             methods=regression_methods,
+                             landmark=730))
+        ## matching
+        bootstrap_results_matching[[b]]=bind_rows(
+          lapply(available,function(ratioi){
+            run_all_matching(data=boot_data,
+                    ratio=ratioi,
+                    methods=matching_methods,
+                    landmark=730)
+          })
+        ) %>% mutate(boot=b)
+      }
+      # bind_together results from bootstrap,for both methods
+      bootstrap_results_regression=bind_rows(bootstrap_results_regression)
+      bootstrap_results_matching=bind_rows(bootstrap_results_matching)
+      ## bind results from different methods
+      bootstrap_results=bind_rows(bootstrap_results_regression,
+                                  bootstrap_results_matching)
+      # obtain standard error
+      se_results=bootstrap_results %>%
+        group_by(method,ratio) %>%
+        summarise(se=sd(result,na.rm=TRUE),
+                  mean_converged=mean(converged),
+                  .groups = "drop")
+      # obtain standard error
+        point_results %>%
+          left_join(se_results,
+                    by=c("method","ratio")) %>%
+          mutate(sim=t,
+                 ntrt=ntrti,
+                 nctrl=nctrli,
+                 event_before=table(dftrial$event)[2],
+                 smdageb=smdageb,
+                 smdsexb=smdsexb)
+        }
+})
+# reorder
+aa=results %>% 
+  select(result,se,ntrt,nctrl,ratio,ntrt_post,nctrl_post,
+         esst,essc,ess,event_before,event_post,
+         smdageb,smdagea,smdsexb,smdsexa,method,
+         sim,converged,mean_converged,message)
+# time? 
+elapsed=proc.time()-start.time
+elapsed; elapsed["elapsed"]
+```
+
+# Save quantities
+
+Save data
+
+```{r}
+saveRDS(results,"C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\time_to_event\\results_population_rr_0.75_2000_replicates.rds")
+```

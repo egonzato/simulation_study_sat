@@ -1,0 +1,466 @@
+---
+title: "single_methods"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(dplyr,tidyr,tidyverse,ggplot2,lpSolve,readxl,
+               optmatch,ipw,lme4,lmerTest,emmeans,boot,randomForest)
+```
+
+# Source functions
+
+```{r}
+function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\with duration",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
+for (i in 1:length(function_dirs)){
+  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+sapply(files, source)
+}
+```
+
+# Load dataset
+
+```{r,warning=FALSE}
+df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\with duration\\continuous\\population_diff_0.15.rds") 
+#df=readxl::read_xlsx("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\population_hui_like_dur.xlsx")
+# keep only treated participants with enough visits
+df=df %>% 
+  group_by(id) %>% 
+  mutate(flag_trt=ifelse(trt_overall==1 & sum(trt)<5,1,0),
+         flag_untrt=ifelse(trt_overall==0 & max(row_number())<5,1,0)) %>% 
+  ungroup() %>% 
+  filter(flag_untrt==0 & flag_trt==0)
+```
+
+# Single calls
+
+## Create dftrial
+
+```{r}
+# set seed for reproducibility
+set.seed(11112000)
+# sample untreated
+untrtid=unique(df$id[which(df$trt_overall==0 & df$dateonset<df$trialdate)])
+# sample treated
+trtid=unique(df$id[which(df$trt_overall==1 & df$dateonset<df$trialdate)])
+# bind together
+ids=c(sample(untrtid,250),sample(trtid,20))
+```
+
+Bind them together
+
+```{r}
+trialdf=df %>% 
+  #filter(miss==0) %>% 
+  filter(id %in% ids) 
+```
+
+Define duration
+
+```{r}
+trialdf=trialdf %>% 
+  mutate(across(c(date,dateonset,starttrial,lastvisit,trialdate),as.Date)) %>% 
+  mutate(time=time/365.25) 
+```
+
+```{r}
+treateddf=trialdf %>% 
+  filter(trt_overall==1)
+```
+
+# Alignment without confounding
+
+```{r}
+matched=duration_matching_interpolation(data=trialdf,identifier=id,
+                                        y=hui_linear_trt,
+                 treatment=trt_overall,
+                 duration=duration,time=timen,
+                 ratio=2)
+# extract matched dataset
+matcheddf=matched$interpolated %>% 
+  arrange(id, timen) %>% 
+  group_by(id) %>% 
+  mutate(hui_baseline=first(y)) %>% 
+  filter(row_number()!=1) %>% 
+  ungroup()
+```
+
+Plot
+
+```{r}
+# select random cluster
+clusters=sample(unique(matcheddf$cluster),5)
+# plot cluster without baseline
+matcheddf %>% 
+  filter(cluster %in% clusters) %>% 
+  filter(time_aligned<=2) %>% 
+  ggplot(.,aes(x=time_aligned,
+               y=y,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+# plot cluster with baseline
+matched$interpolated %>% 
+  filter(cluster %in% clusters) %>% 
+  filter(time_aligned<=2) %>% 
+  ggplot(.,aes(x=time_aligned,
+               y=y,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+```
+
+Get estimate
+
+```{r}
+# model
+trial=matcheddf %>% 
+  filter(time_aligned<=2) %>%
+  lmer(y~(1|cluster)+(1|cluster:id)+hui_baseline+trt*time_aligned+yoo,.)
+# contrast
+estimand=emmeans(trial, ~ trt | time_aligned,
+                              at = list(time_aligned=2))
+# see contrast
+ate=summary(pairs(estimand))$estimate[1]
+```
+
+# Correct alignment
+
+## exact matching
+
+### single procedure
+
+```{r}
+matched=matching_interpolation(data=trialdf,identifier=id,y=hui_linear_trt,
+                 treatment=trt_overall,ageofonset=aoo,
+                 sex=sex,duration=duration,time=timen,
+                 ratio=1,
+                 #caliper=NULL,step=NULL,maxcaliper=NULL,
+                 caliper=0.5,step=0.1,maxcaliper=0.5,
+                 method='greedy')
+# extract matched dataset
+matcheddf=matched$interpolated %>% 
+  arrange(id, timen) %>% 
+  group_by(id) %>% 
+  mutate(hui_baseline=first(y)) %>% 
+  filter(row_number()!=1) %>% 
+  ungroup()
+```
+
+Plot
+
+```{r}
+# select random cluster
+clusters=sample(unique(matched$interpolated$cluster),5)
+# plot cluster with baseline
+matched$interpolated %>% 
+  filter(cluster %in% clusters) %>% 
+  filter(time_aligned>=0 & time_aligned<=2) %>% 
+  ggplot(.,aes(x=time_aligned,
+               y=y,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  facet_wrap(~cluster)+
+  theme_bw()
+# plot cluster without baseline
+matcheddf %>% 
+  filter(cluster %in% clusters) %>% 
+  filter(time_aligned>=0 & time_aligned<=2) %>% 
+  ggplot(.,aes(x=time_aligned,
+               y=y,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  facet_wrap(~cluster)+
+  theme_bw()
+```
+
+Run analysis
+
+```{r}
+options(scipen=999)
+trial=matcheddf %>% 
+  filter(time_aligned<=2) %>%
+  lmer(y~(1|cluster)+(1|cluster:id)+hui_baseline+trt*time_aligned+yoo,.)
+```
+
+Get estimate
+
+```{r}
+estimand=emmeans(trial, ~ trt | time_aligned,
+                              at = list(time_aligned=2))
+# see contrast
+ate=summary(pairs(estimand))$estimate[1]
+```
+
+## probability
+
+### single procedure
+
+#### single procedure
+
+```{r}
+matched=psm_matching_interpolation(data=trialdf,identifier=id,
+                                   outcome=hui_linear_trt,
+                     formula=trt_overall~aoo+sex,duration=duration,time=timen,
+                     ratio=2,replacement=F,tune=F,
+                     distance='glm',method='greedy',caliper=NULL)
+# extract matched dataset
+matcheddf=matched$interpolated %>% 
+  arrange(id, timen) %>% 
+  group_by(id) %>% 
+  mutate(hui_baseline=first(y)) %>% 
+  filter(row_number()!=1) %>% 
+  ungroup()
+```
+
+Plot
+
+```{r}
+# select random cluster
+clusters=sample(unique(matched$interpolated$cluster),5)
+# plot cluster with baseline
+matched$interpolated %>% 
+  #filter(cluster %in% clusters) %>% 
+  filter(time_aligned>=0 & time_aligned<=2) %>% 
+  ggplot(.,aes(x=time_aligned,
+               y=y,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  xlim(0,2)+
+  facet_wrap(~cluster)+
+  theme_bw()
+# plot cluster without baseline
+matcheddf %>% 
+  #filter(cluster %in% clusters) %>% 
+  filter(time_aligned>=0 & time_aligned<=2) %>% 
+  ggplot(.,aes(x=time_aligned,
+               y=y,col=factor(trt_overall),group = id))+
+  geom_point()+
+  geom_line()+
+  xlim(0,2)+
+  guides(col='none')+
+  facet_wrap(~cluster)+
+  theme_bw()
+```
+
+Run analysis
+
+```{r}
+options(scipen=999)
+trial=matched$interpolated %>% 
+  filter(time_aligned<=2) %>%
+  lmer(y~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,.)
+```
+
+Get estimate
+
+```{r}
+estimand=emmeans(trial, ~ trt | time_aligned,
+                              at = list(time_aligned=2))
+# see contrast
+ate=summary(pairs(estimand))$estimate[1]
+```
+
+#### bootstrap
+
+```{r}
+# pick baseline
+trialdfb=trialdf %>% group_by(id) %>% slice(1) %>% ungroup()
+# run bootstrap
+B=boot(data=trialdfb,
+       full_data=trialdf,
+       strata=trialdfb[["trt"]],
+       R=5,
+       landmark=2,
+       duration="duration",time="timen",
+       statistic=boot_matching,
+       treatment_model=trt_overall~aoo+sex,
+       outcome_model=hui_linear_trt~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,
+       method="psm",
+       estimate="ate",
+       search=list(psm="greedy"),
+       psm_arguments=list(tune=FALSE,
+                          caliper=NULL,
+                          distance="glm"),
+       longitudinal_arguments=list(identifier="id",
+                                   y="hui_linear_trt",
+                                   time="time_aligned"))
+```
+
+Confidence interval
+
+```{r}
+# ate
+ate
+# bootstrap estimates
+bate=B$t0[1]
+lower=bate-1.96*sd(B$t[,1])
+upper=bate+1.96*sd(B$t[,1])
+# print bate
+# converged proportion?
+sum(B$t[,2])/length(B$t[,2])
+# see all
+B$t
+```
+
+## random forest
+
+### single procedure
+
+```{r}
+matched=psm_matching_interpolation(data=trialdf,
+                                   identifier=id,outcome=hui_linear_trt,
+                     formula=trt_overall~aoo+sex,duration=duration,time=timen,
+                     ratio=2,replacement=F,tune=F,seed=181299,
+                     distance='glm',method='optimal',caliper=NULL)
+```
+
+Run analysis
+
+```{r}
+options(scipen=999)
+trial=matched$interpolated %>% 
+  filter(time_aligned<=2) %>%
+  lmer(y~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,.)
+```
+
+Get estimate
+
+```{r}
+estimand=emmeans(trial, ~ trt | time_aligned,
+                              at = list(time_aligned=2),
+                 cov.reduce=list(yoo=mean))
+# see contrast
+ate=summary(pairs(estimand))$estimate[1]
+```
+
+#### bootstrap
+
+```{r}
+# pick baseline
+trialdfb=trialdf %>% group_by(id) %>% slice(1) %>% ungroup()
+# run bootstrap
+B=boot(data=trialdfb,
+       full_data=trialdf,
+       R=5,
+       landmark=2,
+       duration="duration",time="timen",
+       statistic=boot_matching,
+       treatment_model=trt_overall~aoo+sex,
+       outcome_model=hui_linear_trt~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,
+       method="psm",
+       estimate="ate",
+       search=list(psm="optimal"),
+       psm_arguments=list(tune=FALSE,
+                          seed=181299,
+                          caliper=NULL,
+                          distance="random forest"),
+       longitudinal_arguments=list(identifier="id",
+                                   y="hui_linear_trt",
+                                   time="time_aligned"))
+```
+
+Confidence interval
+
+```{r}
+bate=B$t0[1]
+lower=bate-1.96*sd(B$t[,1])
+upper=bate+1.96*sd(B$t[,1])
+# converged proportion?
+sum(B$t[,2])/length(B$t[,2])
+```
+
+## mahalanobis
+
+### single procedure
+
+```{r}
+matched=psm_matching_interpolation(data=trialdf,identifier=id,
+                                   outcome=hui_linear_trt,
+                     formula=trt_overall~aoo+sex,
+                     duration=duration,time=timen,
+                     ratio=2,replacement=F,tune=F,
+                     distance='mahalanobis',method='optimal',caliper=NULL)
+```
+
+Run analysis
+
+```{r}
+options(scipen=999)
+trial=matched$interpolated %>% 
+  filter(time_aligned<=2) %>%
+  lmer(y~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,.)
+```
+
+Get estimate
+
+```{r}
+estimand=emmeans(trial, ~ trt | time_aligned,
+                              at = list(time_aligned=2),
+                 cov.reduce=list(yoo=mean))
+# see contrast
+ate=summary(pairs(estimand))$estimate[1]
+```
+
+#### bootstrap
+
+```{r}
+# pick baseline
+trialdfb=trialdf %>% group_by(id) %>% slice(1) %>% ungroup()
+# run bootstrap
+B=boot(data=trialdfb,
+       full_data=trialdf,
+       strata=trialdfb[["trt"]],
+       R=5,
+       landmark=2,
+       duration="duration",time="timen",
+       statistic=boot_matching,
+       treatment_model=trt_overall~aoo+sex,
+       outcome_model=hui_linear_trt~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,
+       method="psm",
+       estimate="ate",
+       search=list(psm="optimal"),
+       ratio=2,
+       psm_arguments=list(tune=FALSE,
+                          seed=181299,
+                          caliper=NULL,
+                          distance="mahalanobis"),
+       longitudinal_arguments=list(identifier="id",
+                                   y="hui_linear_trt",
+                                   time="time_aligned"))
+```
+
+Confidence interval
+
+```{r}
+# original estimate
+ate
+# bootstrap estimates
+bate=B$t0[1]
+lower=bate-1.96*sd(B$t[,1])
+upper=bate+1.96*sd(B$t[,1])
+# converged proportion?
+sum(B$t[,2])/length(B$t[,2])
+# see all
+B$t
+```
+
+# purl
+
+```{r}
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\with duration\\continuous\\single_methods\\single_methods.qmd")
+```

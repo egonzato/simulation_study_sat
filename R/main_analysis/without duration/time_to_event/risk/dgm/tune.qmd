@@ -1,0 +1,133 @@
+---
+title: "tune"
+format: html
+editor: visual
+---
+
+# Libraries
+
+```{r}
+pacman::p_load(dplyr, lubridate)
+```
+
+# Source functions
+
+```{r}
+function_dirs = c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\time_to_event")
+for (i in seq_along(function_dirs)) {
+  files = list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+  sapply(files, source)
+}
+```
+
+# Simulate data
+
+Dates
+
+```{r}
+options(scipen = 999)
+set.seed(3111963)
+# define N
+n=1e6
+# define start and end of registry
+start_date=as.Date("2005-01-01")
+end_date=as.Date("2022-12-31")
+max_days=as.numeric(end_date - start_date)
+# simulate dates
+backward_days=rtruncexp(n=n,
+                        rate=0.0002,
+                        max=max_days)
+# calculate onset date
+onsetdatev=end_date-floor(backward_days)
+```
+
+Covariates
+
+```{r}
+set.seed(22101957)
+df=data.frame(id=1:n,ageonset=runif(n,0.5,6),
+              event=1,
+              u=runif(n,0,1),
+              e=rnorm(n,0.5,0.02),
+              sex=sample(c('male','female'),n,replace=T))
+# mutate
+df=df %>% 
+  mutate(onsetdate=onsetdatev,
+         calendar=year(onsetdate),
+         calendar_c=calendar-mean(year(onsetdatev)),
+         trialdate=as.Date('2021-05-31'))
+# set mortality and landmark
+pzero=0.5
+tau=2*365.25
+```
+
+# Tune
+
+## Build filtere dataset
+
+```{r}
+prep = function(df, t_int, t_age, t_sex){
+  df %>% 
+    mutate(post = onsetdate >= trialdate,
+           ptrt = plogis(t_int - t_age*ageonset + t_sex*(sex=="male")),
+           conf = u < ptrt,
+           trt  = as.integer(conf & post)) %>% 
+    filter(!(post & !conf))   # drop untreated patients with onset after the trial date
+}
+
+get_smds = function(df, t_int, t_age, t_sex){
+  d = prep(df, t_int, t_age, t_sex)
+  c(smd::smd(d$ageonset, d$trt)$estimate,
+    smd::smd(d$sex, d$trt)$estimate)
+}
+```
+
+## Solve for the treatment parameters to get SMDs
+
+```{r}
+solve_treatment = function(df, target_smd_age, target_smd_sex, t_int = 1, start = c(0.75, 2)){
+  obj = function(par){
+    sum((get_smds(df, t_int, par[1], par[2]) - c(target_smd_age, target_smd_sex))^2)
+  }
+  o = optim(start, obj, method = "Nelder-Mead", control = list(reltol = 1e-10))
+  c(t_age = o$par[1], t_sex = o$par[2])
+}
+```
+
+## Solve for outcome parameters to get bias
+
+```{r}
+bias_fun = function(d, b_age, b_sex, t = 730){
+  lpcov  = -b_age*d$ageonset + b_sex*(d$sex=="male") - 0.01*d$calendar_c + d$e
+  lambda = uniroot(function(l) mean(1 - exp(-l*exp(lpcov)*tau/30)) - pzero,
+                   interval = c(0, 1e15), tol = 1e-12)$root
+  risk = 1 - exp(-lambda*exp(lpcov)*t/30)
+  mean(risk[d$trt == 1]) / mean(risk[d$trt == 0]) - 1   # naive RR / true RR - 1
+}
+
+solve_outcome = function(d, target_bias, ratio = 0.5/0.75){
+  b_age = uniroot(function(b) bias_fun(d, b, ratio*b) - target_bias,
+                  interval = c(0.01, 2), tol = 1e-6)$root
+  c(b_age = b_age, b_sex = ratio*b_age)
+}
+```
+
+## Get values given targets
+
+```{r}
+calibrate_dgm = function(df, target_smd_age, target_smd_sex, target_bias,
+                         t_int = 1, ratio = 0.5/0.75){
+  trt_par = solve_treatment(df, target_smd_age, target_smd_sex, t_int)
+  d       = prep(df, t_int, trt_par["t_age"], trt_par["t_sex"])
+  out_par = solve_outcome(d, target_bias, ratio)
+
+  # check: recompute the achieved values with the solved parameters
+  achieved = c(get_smds(df, t_int, trt_par["t_age"], trt_par["t_sex"]),
+               bias_fun(d, out_par["b_age"], out_par["b_sex"]))
+  names(achieved) = c("smd_age", "smd_sex", "rel_bias")
+
+  list(parameters = c(t_int = t_int, trt_par, out_par), achieved = achieved)
+}
+
+calibrate_dgm(df, target_smd_age = 0.5, target_smd_sex = 0.5, target_bias = 0.20)
+```

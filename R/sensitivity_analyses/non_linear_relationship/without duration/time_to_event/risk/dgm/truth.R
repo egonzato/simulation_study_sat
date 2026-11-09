@@ -1,0 +1,89 @@
+## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+pacman::p_load(dplyr,tidyr,tidyverse,ggplot2,survival)
+
+
+## ----warning=FALSE-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+pop=readxl::read_xlsx("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\population_nodur.xlsx")
+
+
+## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# divide treated and untreated
+trt=pop %>% 
+  filter(trt==1) %>%
+  mutate(timeuntrt=rexp(nrow(pop[pop$trt==1,]),hazard)*30,
+         timetrt=rexp(nrow(pop[pop$trt==1,]),hazardtrt)*30) %>% 
+  select(id,event,trt,timeuntrt,timetrt,calendar)
+
+
+## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+counter=rbind(trt,trt) %>% 
+  arrange(id) %>% 
+  group_by(id) %>% 
+  mutate(timec=ifelse(row_number()==1,timetrt,timeuntrt),
+         trtc=ifelse(row_number()==1,1,0),
+         eventc=ifelse(timec>=365,0,1),
+         timec=ifelse(timec>=365,365,timec)) %>% 
+  ungroup() %>% 
+  select(id,eventc,trtc,timec,calendar)
+
+
+## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+model=coxph(Surv(timec,eventc)~trtc,counter)
+summary(model)
+
+
+## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+set.seed(03111963)
+beta=c(); ntrt=c()
+for (ntrti in seq(20,50,10)){  
+  for (i in 1:1000){
+    # sample thirty random patients
+    trti=trt[sample(1:nrow(trt),ntrti),]
+    # double those patients
+    dftrti=rbind(trti,trti)
+    # create df value
+    dfmodel=dftrti %>% 
+      arrange(id) %>% 
+      group_by(id) %>% 
+      mutate(timec=ifelse(row_number()==1,timetrt,timeuntrt),
+             trtc=ifelse(row_number()==1,1,0),
+             eventc=ifelse(timec>=365,0,1),
+             timec=ifelse(timec>=365,365,timec)) %>% 
+      ungroup() %>% 
+      select(id,eventc,trtc,timec,calendar)
+    # run model on doubled dataset
+    modeli=coxph(Surv(timec,eventc)~trtc,dfmodel)
+    # store beta
+    beta=c(beta,modeli$coefficients)
+    ntrt=c(ntrt,ntrti)
+    # where we at?
+    if (i %in% seq(100,10000,100)){print(paste("Combination: ","i=",i,
+                                               ";"," k=",ntrti,sep=""))}
+  }
+}
+
+
+## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# bind together
+dftrue=data.frame(betas=beta,ntrts=paste("n=",ntrt,sep=""))
+# create median database
+med_df=dftrue %>%
+  group_by(ntrts) %>%
+  summarise(median=median(betas, na.rm = TRUE),
+            sd=sd(betas, na.rm = TRUE), .groups = "drop")
+# plot
+ggplot(dftrue, aes(x = betas)) +
+  geom_histogram(col = "black", fill = "white") +
+  facet_wrap(~ntrts) +
+  geom_vline(data=med_df,
+             aes(xintercept=median),
+             linetype="dashed",
+             colour="red") +
+  theme_bw() +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.text = element_text(face = "bold"))
+
+
+## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\without duration\\time_to_event\\dgm\\truth.qmd")
+

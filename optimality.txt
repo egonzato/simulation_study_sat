@@ -1,0 +1,9 @@
+With duration
+
+survival
+- exact optimal breaks when bootstrapping
+- psm optimal breaks sometimes
+
+
+
+In general breaks when optimal matching
