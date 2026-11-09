@@ -1,4 +1,5 @@
 # simulation_study_sat
+<<<<<<< HEAD
 
 
 ## to do 
@@ -27,3 +28,6 @@ What is missing for:
         - loops
         - metrics
         - plots
+=======
+to be described
+>>>>>>> 62374c268978a1f8dbf4a255ae4e579649d767c2
