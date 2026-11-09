@@ -72,8 +72,10 @@ psm_matching_interpolation=function(data=NULL,identifier=NULL,formula=NULL,outco
   } else {
     cov_data = model.matrix(formula, data=baseline)[, -1, drop=FALSE]  # drop intercept column
     cov_inv  = solve(cov(cov_data))
-    treated_cov   = model.matrix(formula, data=treated)[, -1, drop=FALSE]
-    untreated_cov = model.matrix(formula, data=untreated)[, -1, drop=FALSE]
+    # subset the full design matrix: building it on treated/untreated separately fails
+    # ("contrasts can be applied only to factors with 2 or more levels") when a group has one level only
+    treated_cov   = cov_data[baseline[[treatment_var]]==1, , drop=FALSE]
+    untreated_cov = cov_data[baseline[[treatment_var]]==0, , drop=FALSE]
   }  
   # clipping distance
   if(distance != 'mahalanobis'){
