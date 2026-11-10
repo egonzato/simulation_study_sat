@@ -116,7 +116,7 @@ with_progress({
       bootstrap_results_regression=vector("list",b_reps)
       bootstrap_results_matching=vector("list",b_reps)
       ## loop
-      for (b in 1:b_reps){
+      for (b in seq_len(b_reps)){
         # perform bootstrap
         boot_data=bootstrap_sampler(dftrial,id,trt,ntrti,nctrli)
         # run all method on the same bootstrapped dataset
@@ -143,6 +143,8 @@ with_progress({
       ## bind results from different methods
       bootstrap_results=bind_rows(bootstrap_results_regression,
                                   bootstrap_results_matching)
+      ## no bootstrap (b_reps=0): empty table so that se is NA
+      if (nrow(bootstrap_results)==0) bootstrap_results=data.frame(method=character(),ratio=numeric(),result=numeric(),converged=logical())
       # obtain standard error
       se_results=bootstrap_results %>%
         group_by(method,ratio) %>%

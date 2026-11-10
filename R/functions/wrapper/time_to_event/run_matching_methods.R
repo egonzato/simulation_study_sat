@@ -6,9 +6,9 @@ run_matching_methods=function(data=NULL,methods=NULL,ratio=NULL,landmark=730){
   out=tryCatch({
     withCallingHandlers({
       ## match
-      matched=matching_call(data=data,ratio=ratio,methods=methods)
+      matched=matching_call(data=data,ratio=ratio,methods=methods,landmark=landmark)
       ## run model
-      rr=analyse_call(matched,landmark=730,methods=methods)
+      rr=analyse_call(matched,landmark=landmark,methods=methods)
       ## results
       data.frame(method=methods,
                  ratio=ratio,
