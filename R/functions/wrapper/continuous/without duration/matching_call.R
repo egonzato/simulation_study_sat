@@ -28,7 +28,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods){
       matched=rlang::inject(matching(data=baseline,treatment=trt_overall,ageofonset=aoo,sex=sex,
                                      duration=!!duration_var,time=!!time_var,method='optimal',
                                      caliper=NULL,step=NULL,maxcaliper=NULL,ratio=ratio,
-                                     replacement=F,history=F,warning=T))
+                                     replacement=F,history=F,warning=F))
       # merge with full data
       matches = extract_matches(matched)
     } else if (methods=="psm_p_greedy_noc"){
