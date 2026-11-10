@@ -1,23 +1,23 @@
 # to do currently
 
-DGM for survival data:
-order
+Survival data:
+order scripts
 simulate (anchored), overnight n=2000 to have an idea, RR=c(0.25,0.5)
 simulate (unanchored), overnight n=2000 to have an idea, RR=c(0.25,0.5)
-add github profile
 
-decide on R and B
 
-DGM for longitudinal data
-effect size loop, without missing data, add later
+Longitudinal data:
+DGM anchored, decide on bias and HUI baseline adjustment
+DGM unanchored, decide on bias and enter adjustment
 simulate (anchored), overnight n=2000 to have an idea
 simulate (unanchored), overnight n=2000 to have an idea
+prepare sensitivity analysis (no interpolation, non linear decay in time, adjusted linearly)
 
-simulate all profiles, once
-HELIOS
+Genera:
+set up HELIOS
+read ADEMP
 write
+adapt functions to with replacement
 
 "this is low hanging fruit, Rik"
 
-effect_size_loop, simulate overnight for longitudinal (all scenarios), simulate longitudinal for survival (all scenarios)
-in the meantime, read ADEMP, write manuscript, go ahead with replacement (idea, software in my own free time, if Julia picked as the top choice)

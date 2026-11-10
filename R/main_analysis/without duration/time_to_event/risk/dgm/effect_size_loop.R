@@ -1,0 +1,123 @@
+## -------------------------------------------------------------------------------------------------------------
+pacman::p_load(dplyr,lubridate,survival,survminer,ggsurvfit,rlang,ipw,ggplot2)
+
+
+## -------------------------------------------------------------------------------------------------------------
+function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\time_to_event",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
+for (i in 1:length(function_dirs)){
+  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+sapply(files, source)
+}
+
+
+## -------------------------------------------------------------------------------------------------------------
+set.seed(3111963)
+# define N
+n=1e7
+# define start and end of registry
+start_date=as.Date("2005-01-01")
+end_date=as.Date("2022-12-31")
+max_days=as.numeric(end_date - start_date)
+# simulate dates
+backward_days=rtruncexp(n=n,
+                        rate=0.0002,
+                        max=max_days)
+# calculate onset date
+onsetdatev=end_date-floor(backward_days)
+
+
+## -------------------------------------------------------------------------------------------------------------
+set.seed(22101957)
+n=1e7
+df=data.frame(id=1:n,ageonset=runif(n,0.5,6),
+              event=1,
+              u=runif(n,0,1),
+              e=rnorm(n,0.5,0.02),
+              sex=sample(c('male','female'),n,replace=T))
+# disease duration
+df=df %>% 
+  mutate(onsetdate=onsetdatev,
+         calendar=year(onsetdate),
+         calendar_c=calendar-mean(year(onsetdatev)),
+         lpcov=-0.43*ageonset+0.28*(sex=="male")-0.01*calendar_c+e,
+         trialdate=as.Date('2021-05-31'),
+         trt_yoo=ifelse(onsetdate>=trialdate,1,0),
+         ptrt_conf=1/(1+exp(-(+1 -0.78*ageonset + 2.35*I(sex=='male')))),
+         trt_conf=rbinom(n,1,ptrt_conf),
+         trt=ifelse(trt_conf == 1 & trt_yoo == 1,1,0))
+# set parameters to calibrate mortality
+pzero=0.5; taud=2*365.25
+# calibrate given lpcov, pzero and taud
+eta=df$lpcov
+lambda_rexp=uniroot(function(lambda) {
+  mean(1 - exp(-lambda * exp(eta) * taud / 30)) - pzero},
+  interval = c(0,1e15),
+  tol = 1e-12)$root
+# define trt effect with new 
+df=df %>% 
+  mutate(hazard=lambda_rexp * exp(lpcov),
+         timedays=rexp(n,rate=hazard)*30)
+# histogram of probabilities
+hist(df$ptrt_conf)
+# number of treated
+table(df$trt)
+
+
+## -------------------------------------------------------------------------------------------------------------
+# smd on ageonset and sex between treated and untreated
+smd::smd(df$ageonset,df$trt)$estimate
+smd::smd(df$sex,df$trt)$estimate
+
+
+## -------------------------------------------------------------------------------------------------------------
+target_population=df %>% filter(trt==1)
+# functions to fine tune
+## compute risk ratio
+compute_rr = function(k, t=730, pop=target_population){
+  s0 = mean(exp(-pop$hazard * t/30))      
+  s1 = mean(exp(-k * pop$hazard * t/30))
+  risk0 = 1 - s0
+  risk1 = 1 - s1
+  risk1 / risk0
+}
+## find deflation factor
+find_k = function(target, t=730, pop=target_population){
+  if (target == 1) return(1)   
+  uniroot(function(k) compute_rr(k, t, pop) - target,
+          interval = c(1e-15, 1),
+          tol = 1e-12)$root
+}
+
+
+## -------------------------------------------------------------------------------------------------------------
+targets = c(1, 0.75, 0.5, 0.25)
+#targets = c(0.25)
+ks = sapply(targets, find_k)
+names(ks) = targets
+
+
+## -------------------------------------------------------------------------------------------------------------
+# set path
+folder="C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\time_to_event\\population_rr_"
+# save multiple dataset
+for (i in 1:length(targets)){
+  # apply treatment
+  df=df %>% 
+  mutate(hazardtrt=hazard*ks[i],
+         timedaystrt=ifelse(trt==1,
+                            rexp(n(),hazardtrt),
+                            NA_real_)*30,
+         timetotal=ifelse(trt==1,timedaystrt,timedays))
+  # define dataset
+  path=paste(folder,targets[i],".rds",sep="")
+  # save dataset, keeping only historical controls (onset before the trial date), as in the tuning
+  saveRDS(df %>% filter(!(trt==0 & trt_yoo==1)),
+          path)
+}
+
+
+## -------------------------------------------------------------------------------------------------------------
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\time_to_event\\risk\\dgm\\effect_size_loop.qmd")
+
