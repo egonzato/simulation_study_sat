@@ -167,6 +167,7 @@ with_progress({
       se_results=bootstrap_results %>%
         group_by(method,ratio) %>%
         summarise(se=sd(result,na.rm=TRUE),
+                  se_log=sd(log(result),na.rm=TRUE),
                   mean_converged=mean(converged),
                   .groups = "drop")
       # obtain standard error
@@ -183,7 +184,7 @@ with_progress({
 })
 # reorder
 aa=results %>% 
-  select(result,se,ntrt,nctrl,ratio,ntrt_post,nctrl_post,
+  select(result,se,se_log,ntrt,nctrl,ratio,ntrt_post,nctrl_post,
          esst,essc,ess,event_before,event_post,
          smdageb,smdagea,smdsexb,smdsexa,method,
          sim,converged,mean_converged,message)
