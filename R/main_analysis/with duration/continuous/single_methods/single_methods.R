@@ -61,7 +61,7 @@ trial=matched$interpolated %>%
 estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 
 
 ## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -112,7 +112,7 @@ trial=matched$interpolated %>%
 estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 
 
 ## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -164,7 +164,7 @@ estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2),
                  cov.reduce=list(yoo=mean))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 
 
 ## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -217,7 +217,7 @@ estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2),
                  cov.reduce=list(yoo=mean))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 
 
 ## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

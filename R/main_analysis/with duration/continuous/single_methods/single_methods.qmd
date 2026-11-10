@@ -127,12 +127,12 @@ Get estimate
 # model
 trial=matcheddf %>% 
   filter(time_aligned<=2) %>%
-  lmer(y~(1|cluster)+(1|cluster:id)+hui_baseline+trt*time_aligned+yoo,.)
+  lmer(y~(1|cluster)+(1|cluster:id)+hui_baseline+trt*time_aligned+yoo+enter,.)
 # contrast
 estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 ```
 
 # Correct alignment
@@ -193,7 +193,7 @@ Run analysis
 options(scipen=999)
 trial=matcheddf %>% 
   filter(time_aligned<=2) %>%
-  lmer(y~(1|cluster)+(1|cluster:id)+hui_baseline+trt*time_aligned+yoo,.)
+  lmer(y~(1|cluster)+(1|cluster:id)+hui_baseline+trt*time_aligned+yoo+enter,.)
 ```
 
 Get estimate
@@ -202,7 +202,7 @@ Get estimate
 estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 ```
 
 ## probability
@@ -272,7 +272,7 @@ Get estimate
 estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 ```
 
 #### bootstrap
@@ -345,7 +345,7 @@ estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2),
                  cov.reduce=list(yoo=mean))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 ```
 
 #### bootstrap
@@ -413,7 +413,7 @@ estimand=emmeans(trial, ~ trt | time_aligned,
                               at = list(time_aligned=2),
                  cov.reduce=list(yoo=mean))
 # see contrast
-ate=summary(pairs(estimand))$estimate[1]
+ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 ```
 
 #### bootstrap
