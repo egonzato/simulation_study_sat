@@ -15,7 +15,7 @@ pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,smd,WeightIt,
 # Load dataset
 
 ```{r}
-pop=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\time_to_event\\population_rr_0.25.xlsx")
+pop=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\time_to_event\\population_rr_0.25.rds")
 ```
 
 # Source function

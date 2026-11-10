@@ -350,5 +350,5 @@ smd_long %>%
 
 
 ## ----------------------------------------------------------------------------------------------------------------------------------------------
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\without duration\\time_to_event\\reporting\\report_facet_bias_0.25_calibrate.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\without duration\\time_to_event\\risk\\reporting\\report_facet_bias_0.25_calibrate.qmd")
 

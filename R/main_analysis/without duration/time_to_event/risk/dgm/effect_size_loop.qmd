@@ -128,7 +128,7 @@ ks = sapply(targets, find_k)
 names(ks) = targets
 ```
 
-Consider that the trial start on the `23-05-2020`, so all patients that are alive at that time will receive the treatment.
+Consider that the trial starts on the `31-05-2021`, so all patients that are alive at that time will receive the treatment.
 
 ```{r}
 # set path
@@ -143,9 +143,9 @@ for (i in 1:length(targets)){
                             NA_real_)*30,
          timetotal=ifelse(trt==1,timedaystrt,timedays))
   # define dataset
-  path=paste(folder,targets[i],".xlsx",sep="")
-  # save dataset
-  saveRDS(df,
+  path=paste(folder,targets[i],".rds",sep="")
+  # save dataset, keeping only historical controls (onset before the trial date), as in the tuning
+  saveRDS(df %>% filter(!(trt==0 & trt_yoo==1)),
           path)
 }
 ```
@@ -153,5 +153,5 @@ for (i in 1:length(targets)){
 knitr
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\time_to_event\\risk\\dgm\\effect_size_loop_calibrate.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\time_to_event\\risk\\dgm\\effect_size_loop.qmd")
 ```
