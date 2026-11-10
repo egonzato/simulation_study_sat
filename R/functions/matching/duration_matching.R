@@ -1,4 +1,4 @@
-duration_matching=function(data=NULL,treatment=NULL,duration,time=NULL,ratio=NULL,replacement=FALSE,warning=TRUE,history=FALSE){
+duration_matching=function(data=NULL,treatment=NULL,duration,time=NULL,ratio=NULL,replacement=FALSE,warning=FALSE,history=FALSE){
   #  warnings to avoid wrong input
   if(!(replacement %in% c(TRUE,FALSE))){stop("Error: replacement must be either TRUE or FALSE")}
   if(replacement==FALSE & is.null(ratio)){stop("Please specify ratio when replacement = FALSE")}

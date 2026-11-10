@@ -51,7 +51,9 @@ matching_methods=c("duration_matching",
                    "psm_p_greedy_noc",
                    "psm_p_greedy_caliper_01",
                    "psm_p_greedy_caliper_005",
-                   "psm_m_greedy_noc","psm_m_greedy_caliper_01","psm_m_greedy_caliper_005",
+                   "psm_m_greedy_noc",
+                   "psm_m_greedy_caliper_01",
+                   "psm_m_greedy_caliper_005",
                    "psm_p_optimal","psm_m_optimal")
 # set number of repetitions for iterations and bootstrap
 n_reps=10; b_reps=1

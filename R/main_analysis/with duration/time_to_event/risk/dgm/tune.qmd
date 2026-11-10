@@ -28,7 +28,7 @@ Dates
 options(scipen = 999)
 set.seed(3111963)
 # define N
-n=1e5
+n=1e7
 # define start and end of registry
 start_date=as.Date("2005-01-01")
 end_date=as.Date("2022-12-31")

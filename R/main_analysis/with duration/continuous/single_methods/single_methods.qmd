@@ -275,48 +275,6 @@ estimand=emmeans(trial, ~ trt | time_aligned,
 ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 ```
 
-#### bootstrap
-
-```{r}
-# pick baseline
-trialdfb=trialdf %>% group_by(id) %>% slice(1) %>% ungroup()
-# run bootstrap
-B=boot(data=trialdfb,
-       full_data=trialdf,
-       strata=trialdfb[["trt"]],
-       R=5,
-       landmark=2,
-       duration="duration",time="timen",
-       statistic=boot_matching,
-       treatment_model=trt_overall~aoo+sex,
-       outcome_model=hui_linear_trt~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,
-       method="psm",
-       estimate="ate",
-       search=list(psm="greedy"),
-       psm_arguments=list(tune=FALSE,
-                          caliper=NULL,
-                          distance="glm"),
-       longitudinal_arguments=list(identifier="id",
-                                   y="hui_linear_trt",
-                                   time="time_aligned"))
-```
-
-Confidence interval
-
-```{r}
-# ate
-ate
-# bootstrap estimates
-bate=B$t0[1]
-lower=bate-1.96*sd(B$t[,1])
-upper=bate+1.96*sd(B$t[,1])
-# print bate
-# converged proportion?
-sum(B$t[,2])/length(B$t[,2])
-# see all
-B$t
-```
-
 ## random forest
 
 ### single procedure
@@ -346,42 +304,6 @@ estimand=emmeans(trial, ~ trt | time_aligned,
                  cov.reduce=list(yoo=mean))
 # see contrast
 ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
-```
-
-#### bootstrap
-
-```{r}
-# pick baseline
-trialdfb=trialdf %>% group_by(id) %>% slice(1) %>% ungroup()
-# run bootstrap
-B=boot(data=trialdfb,
-       full_data=trialdf,
-       R=5,
-       landmark=2,
-       duration="duration",time="timen",
-       statistic=boot_matching,
-       treatment_model=trt_overall~aoo+sex,
-       outcome_model=hui_linear_trt~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,
-       method="psm",
-       estimate="ate",
-       search=list(psm="optimal"),
-       psm_arguments=list(tune=FALSE,
-                          seed=181299,
-                          caliper=NULL,
-                          distance="random forest"),
-       longitudinal_arguments=list(identifier="id",
-                                   y="hui_linear_trt",
-                                   time="time_aligned"))
-```
-
-Confidence interval
-
-```{r}
-bate=B$t0[1]
-lower=bate-1.96*sd(B$t[,1])
-upper=bate+1.96*sd(B$t[,1])
-# converged proportion?
-sum(B$t[,2])/length(B$t[,2])
 ```
 
 ## mahalanobis
@@ -414,49 +336,6 @@ estimand=emmeans(trial, ~ trt | time_aligned,
                  cov.reduce=list(yoo=mean))
 # see contrast
 ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
-```
-
-#### bootstrap
-
-```{r}
-# pick baseline
-trialdfb=trialdf %>% group_by(id) %>% slice(1) %>% ungroup()
-# run bootstrap
-B=boot(data=trialdfb,
-       full_data=trialdf,
-       strata=trialdfb[["trt"]],
-       R=5,
-       landmark=2,
-       duration="duration",time="timen",
-       statistic=boot_matching,
-       treatment_model=trt_overall~aoo+sex,
-       outcome_model=hui_linear_trt~(1|cluster)+(1|cluster:id)+trt*time_aligned+yoo,
-       method="psm",
-       estimate="ate",
-       search=list(psm="optimal"),
-       ratio=2,
-       psm_arguments=list(tune=FALSE,
-                          seed=181299,
-                          caliper=NULL,
-                          distance="mahalanobis"),
-       longitudinal_arguments=list(identifier="id",
-                                   y="hui_linear_trt",
-                                   time="time_aligned"))
-```
-
-Confidence interval
-
-```{r}
-# original estimate
-ate
-# bootstrap estimates
-bate=B$t0[1]
-lower=bate-1.96*sd(B$t[,1])
-upper=bate+1.96*sd(B$t[,1])
-# converged proportion?
-sum(B$t[,2])/length(B$t[,2])
-# see all
-B$t
 ```
 
 # purl
