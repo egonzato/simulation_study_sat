@@ -13,9 +13,10 @@ simulate (anchored), overnight n=2000 to have an idea
 simulate (unanchored), overnight n=2000 to have an idea
 prepare sensitivity analysis (no interpolation, non linear decay in time, adjusted linearly)
 
-Genera:
+General:
+smoke test
+reporting file
 set up HELIOS
-read ADEMP
 write
 adapt functions to with replacement
 
