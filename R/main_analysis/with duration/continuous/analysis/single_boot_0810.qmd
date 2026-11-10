@@ -167,5 +167,5 @@ saveRDS(results,"C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material w
 # knitr
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\time_to_event\\risk\\analysis\\single_boot.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\with duration\\continuous\\analysis\\single_boot_0810.qmd")
 ```

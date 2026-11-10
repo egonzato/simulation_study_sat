@@ -85,5 +85,5 @@ ggplot(dftrue, aes(x = betas)) +
 
 
 ## ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\without duration\\time_to_event\\dgm\\truth.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\time_to_event\\HR\\dgm\\truth.qmd")
 
