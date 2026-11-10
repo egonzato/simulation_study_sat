@@ -294,6 +294,7 @@ psm_matching_interpolation=function(data=NULL,identifier=NULL,formula=NULL,outco
   ### before time zero
   before_zero=dftrial %>% 
     filter(!((!!treatment_quo)==1 & time_aligned<0)) %>%
+    filter(time_aligned<0) %>%                       # last visit before alignment
     group_by(idm,cluster) %>%
     filter(time_aligned==max(time_aligned)) %>%
     rename(time_before=time_aligned,y_before=(!!y_quo))  %>% 
@@ -301,6 +302,7 @@ psm_matching_interpolation=function(data=NULL,identifier=NULL,formula=NULL,outco
   ### after zero
   after_zero=dftrial %>% 
     filter(!((!!treatment_quo)==1 & time_aligned<0)) %>%
+    filter(time_aligned>=0) %>%                      # first visit at or after alignment
     group_by(idm,cluster) %>%
     filter(time_aligned==min(time_aligned)) %>%
     rename(time_after=time_aligned, 
