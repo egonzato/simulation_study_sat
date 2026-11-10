@@ -87,7 +87,7 @@ rm(dk,pre_k,first_post,nvis_post,npre,lastdur)
 
 ```{r}
 # filter pre
-prep_long = function(base, t_int, t_age, t_sex, wait=FALSE, min_vis=7, min_pre=5){
+prep_long = function(base, t_int, t_age, t_sex, wait=FALSE, min_vis=9, min_pre=5){
   d = base %>% 
     mutate(ptrt=plogis(t_int - t_age*aoo + t_sex*male),
            conf=u < ptrt)
