@@ -68,7 +68,8 @@ prep_wait = function(df, t_int, t_age, t_sex){
            eligible = stopdate >= trialdate,       
            trt      = as.integer(u < ptrt & eligible),
            duration = ifelse(trt==1, trialdate-onsetdate, round(timedays))) %>% 
-    filter(duration > 0)
+    filter(duration > 0,
+           !(trt==0 & onsetdate >= trialdate))   # controls must be historical (onset before the trial date)
 }
 ```
 

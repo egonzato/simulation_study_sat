@@ -65,7 +65,7 @@ df=data.frame(id=1:n,
 df=df %>% 
   mutate(calendar=year(onsetdate),
          calendar_c=calendar-mean(year(onsetdate)),
-         lpcov=-0.236*ageonset+0.154*(sex=="male")-0.01*calendar_c+e,
+         lpcov=-0.243*ageonset+0.158*(sex=="male")-0.01*calendar_c+e,
          trialdate=as.Date('2021-05-31'))
 # set parameters to calibrate mortality
 pzero=0.5; taud=2*365.25
@@ -80,14 +80,16 @@ df=df %>%
   mutate(hazard=lambda_rexp * exp(lpcov),
          timedays=rexp(n,rate=hazard)*30,
          stopdate=timedays+onsetdate,
-         ptrt_conf=1/(1+exp(-(+1 -0.87*ageonset + 1.9*I(sex=='male')))),
+         ptrt_conf=1/(1+exp(-(+1 -0.93*ageonset + 2.04*I(sex=='male')))),
          trt_yoo=ifelse(stopdate>=trialdate,1,0),
          trt_conf=rbinom(n,1,ptrt_conf),
          trt=ifelse(trt_conf == 1 & trt_yoo == 1,1,0),
          duration=ifelse(trt==1,
                          trialdate-onsetdate,
                          round(timedays))) %>% 
-  filter(duration>0)
+  # treated need a waiting time (onset before the trial date); controls must be historical (onset before the trial date)
+  filter(duration>0,
+         !(trt==0 & onsetdate>=trialdate))
 # histogram of probabilities
 hist(df$ptrt_conf)
 # number of treated
@@ -164,5 +166,5 @@ for (i in 1:length(targets)){
 knit
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\with duration\\time_to_event\\risk\\dgm\\effect_size_loop_calibrate.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\with duration\\time_to_event\\risk\\dgm\\effect_size_loop.qmd")
 ```
