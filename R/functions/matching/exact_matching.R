@@ -55,7 +55,12 @@ matching=function(data=NULL,treatment=NULL,ageofonset=NULL,duration=NULL,sex=NUL
           # while loop runs until: i) one control is found or ii) current caliper is higher than the maximum allowed
           while(current_caliper<=maxcaliper){
             # filter for the matching criteria
-            filtered=untreated %>% filter(!!filter_expr) 
+            # closest age of onset first, so that the nearest eligible control is picked
+            filtered=untreated %>% 
+              filter(!!filter_expr) %>%
+              mutate(diff=abs(!!ageofonset_quo-current_ageofonset)) %>% 
+              arrange(diff) %>% 
+              select(-diff)
             # if set to TRUE, prints the number of available controls for each treated participant (given the criteria), at each sequential search
             if(history==TRUE){print(paste('Patient n.:',i,'Control n.:',j,'Caliper:',current_caliper,'Available:',nrow(filtered),sep=' '))}
             # if controls are found, then the loop stops, otherwise, the caliper is updated and the search starts with the new caliper
@@ -70,7 +75,7 @@ matching=function(data=NULL,treatment=NULL,ageofonset=NULL,duration=NULL,sex=NUL
             # lower than the ratio specified will appear in this vector
             unmatched=c(unmatched,treated$id[i]); next
           }
-          # since the filtered dataset is arranged in descending order for year, then the first control is the most recent
+          # filtered is ordered by distance in age of onset, so the first control is the closest one
           controls=filtered[1,]
           # create cluster variable, which in this case is the id value of the treated participant
           controls$cluster=treated$id[i]; treatedp=treated[i,]; treatedp$cluster=treated$id[i]
@@ -91,7 +96,12 @@ matching=function(data=NULL,treatment=NULL,ageofonset=NULL,duration=NULL,sex=NUL
           # extract values for current individual
           current_ageofonset=treated_ageofonset[i]; if(!is.null(enexpr(duration))){current_duration=treated_duration[i]}; if(!is.null(enexpr(sex))){current_sex=treated_sex[i]}
           # filter for the matching criteria
-          filtered=untreated %>% filter(!!filter_expr) 
+          # closest age of onset first, so that the nearest eligible controls are picked
+          filtered=untreated %>% 
+            filter(!!filter_expr) %>%
+            mutate(diff=abs(!!ageofonset_quo-current_ageofonset)) %>% 
+            arrange(diff) %>% 
+            select(-diff)
           # if set to TRUE, prints the number of available controls for each treated participant (given the criteria), at each sequential search
           if(history==TRUE){print(paste('Patient n.:',i,'Caliper:',current_caliper,'Available:',nrow(filtered),sep=' '))}
           # given that the argument ratio can be an integer or set to NULL, in matching with replacement it is needed to specify
