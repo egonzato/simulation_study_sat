@@ -56,7 +56,7 @@ matching_methods=c("duration_matching",
                    "psm_m_greedy_caliper_005",
                    "psm_p_optimal","psm_m_optimal")
 # set number of repetitions for iterations and bootstrap
-n_reps=10; b_reps=1
+n_reps=50; b_reps=20
 tasks=grid[rep(1:nrow(grid),each=n_reps),]
 tasks$rep=rep(1:n_reps,times=nrow(grid))
 total_steps=nrow(tasks)

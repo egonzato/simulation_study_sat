@@ -1,18 +1,18 @@
-## ------------------------------------------------------------------------------------------------------------------------------------
+## ---------------------------------------------------------------------------------------------------------------------
 pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,smd,WeightIt,lme4,
                emmeans,
                randomForest,survival,ggsurvfit,survminer,MatchIt,boot,
                foreach,doParallel,doRNG,future,progressr,doFuture)
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------
+## ---------------------------------------------------------------------------------------------------------------------
 df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\with duration\\continuous\\population_diff_0.15.rds") %>% 
   select(id,timen,trt,trt_overall,duration,aoo,sex,hui_linear_trt,yoo)
 # n rows
 nrow(df)
 
 
-## ----warning=F-----------------------------------------------------------------------------------------------------------------------
+## ----warning=F--------------------------------------------------------------------------------------------------------
 function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\with duration",
                 "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
                 "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
@@ -22,7 +22,7 @@ sapply(files, source)
 }
 
 
-## ----warning=F-----------------------------------------------------------------------------------------------------------------------
+## ----warning=F--------------------------------------------------------------------------------------------------------
 # grid of combinations
 grid=expand.grid(ntrt=c(20,30,40),nctrl=c(50,100,150))
 #grid=expand.grid(ntrt=c(2000),nctrl=c(5000))
@@ -38,7 +38,7 @@ matching_methods=c("duration_matching",
                    "psm_m_greedy_caliper_005",
                    "psm_p_optimal","psm_m_optimal")
 # set number of repetitions for iterations and bootstrap
-n_reps=10; b_reps=1
+n_reps=50; b_reps=20
 tasks=grid[rep(1:nrow(grid),each=n_reps),]
 tasks$rep=rep(1:n_reps,times=nrow(grid))
 total_steps=nrow(tasks)
@@ -143,10 +143,10 @@ elapsed=proc.time()-start.time
 elapsed; elapsed["elapsed"]
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------
+## ---------------------------------------------------------------------------------------------------------------------
 saveRDS(results,"C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\with duration\\continuous\\results_diff_0.15.rds")
 
 
-## ------------------------------------------------------------------------------------------------------------------------------------
+## ---------------------------------------------------------------------------------------------------------------------
 knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\with duration\\continuous\\analysis\\analysis_diff_0.15.qmd")
 
