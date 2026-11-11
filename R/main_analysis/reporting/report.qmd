@@ -1,0 +1,388 @@
+---
+title: "Performance of the methods"
+format: html
+editor: visual
+---
+
+One reporting file for all four branches (anchored/unanchored × continuous/time-to-event). Only the **settings** chunk changes between branches. Every figure is drawn for the reference scenario in the document and saved for all scenarios and effect sizes in `out_dir`, so that main and supplementary figures can be chosen afterwards.
+
+Performance measures and Monte Carlo standard errors (MCSE) follow Morris, White and Crowther (2019), Table 6. For the risk ratio, bias, coverage and rejection are computed on the log scale, using the bootstrap SE of log(RR) (`se_log`).
+
+# Libraries
+
+```{r}
+pacman::p_load(dplyr,tidyr,ggplot2,readr)
+```
+
+# Settings
+
+```{r}
+# root of the project folder
+base="C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\"
+# label used in titles and file names
+branch="Unanchored, continuous"
+# results files, one per effect size, named by the effect size as it should appear in the figures
+results_files=c("0.15"=paste0(base,"Data\\paper\\main_analysis\\with duration\\continuous\\results_diff_0.15.rds"))
+# true value of the estimand for each file (same names as above)
+truths=c("0.15"=0.15)
+# "difference" for the continuous outcome, "ratio" for the risk ratio
+scale="difference"
+# effect size and sample sizes of the reference scenario shown in this document
+ref_effect="0.15"; ref_ntrt=30; ref_nctrl=100
+# folder where all figures and the table of performance measures are saved
+out_dir=paste0(base,"Results\\paper\\main_analysis\\with duration\\continuous\\")
+dir.create(out_dir,recursive=TRUE,showWarnings=FALSE)
+```
+
+Examples for the other branches:
+
+-   anchored continuous: `results_files=c("0.15"=paste0(base,"Data\\paper\\main_analysis\\without duration\\continuous\\results_diff_0.15.rds"))`, `scale="difference"`
+-   time-to-event: `results_files=c("1"=..._rr_1...rds, "0.75"=..., "0.5"=..., "0.25"=...)`, `truths=c("1"=1,"0.75"=0.75,"0.5"=0.5,"0.25"=0.25)`, `scale="ratio"`, `ref_effect="0.5"`
+
+# Load results
+
+```{r}
+results=bind_rows(lapply(names(results_files),function(k){
+  readRDS(results_files[[k]]) %>% mutate(effect=k,truth=unname(truths[k]))
+})) %>%
+  mutate(effect=factor(effect,levels=names(results_files)),
+         ratio=ifelse(is.na(ratio),"none",paste0("1:",ratio)),
+         result=ifelse(is.finite(result),result,NA_real_))
+# analysis scale: difference as is, risk ratio on the log scale
+if (scale=="ratio"){
+  if (!"se_log" %in% names(results)){
+    # older results without se_log: delta-method approximation
+    warning("se_log not found, using se/result (delta method)")
+    results$se_log=results$se/results$result
+  }
+  results=results %>% mutate(est=log(result),theta=log(truth),se_est=se_log,null=0)
+} else {
+  results=results %>% mutate(est=result,theta=truth,se_est=se,null=0)
+}
+# rows per method and scenario
+results %>% count(effect,method,ratio,ntrt,nctrl) %>% summarise(min_reps=min(n),max_reps=max(n))
+```
+
+# Methods
+
+Each method is described by its components, so that figures can group by family, algorithm and caliper, with the ratio as colour.
+
+```{r}
+describe=function(m){
+  tibble(method=m) %>% mutate(
+    family=case_when(m=="raw"~"Unadjusted",
+                     m=="duration_matching"~"Duration only",
+                     m=="gcomp"~"G-computation",
+                     grepl("^iptw",m)~"IPTW",
+                     grepl("^exact",m)~"Exact matching",
+                     grepl("^psm_p",m)~"PSM, propensity score",
+                     grepl("^psm_m",m)~"PSM, Mahalanobis",
+                     TRUE~m),
+    algorithm=case_when(grepl("optimal",m)~"optimal",grepl("greedy",m)~"greedy",TRUE~""),
+    caliper=case_when(grepl("caliper_005",m)~"caliper 0.05",grepl("caliper_01",m)~"caliper 0.1",
+                      grepl("noc",m)~"no caliper",TRUE~""),
+    label=case_when(m=="iptw, unstabilised"~"unstabilised",
+                    m=="iptw, stabilised"~"stabilised",
+                    m=="iptw, stabilised, truncated 0.01"~"stabilised, truncated 1%",
+                    m=="iptw, stabilised, truncated 0.1"~"stabilised, truncated 10%",
+                    algorithm!="" & caliper!=""~paste0(algorithm,", ",caliper),
+                    algorithm!=""~algorithm,
+                    TRUE~family))
+}
+family_levels=c("Unadjusted","Duration only","G-computation","IPTW","Exact matching",
+                "PSM, propensity score","PSM, Mahalanobis")
+label_levels=c("Unadjusted","Duration only","G-computation",
+               "unstabilised","stabilised","stabilised, truncated 1%","stabilised, truncated 10%",
+               "greedy","optimal","greedy, no caliper","greedy, caliper 0.1","greedy, caliper 0.05")
+methods=describe(unique(results$method)) %>%
+  mutate(family=factor(family,levels=intersect(family_levels,family)),
+         label=factor(label,levels=rev(intersect(label_levels,label))))
+methods
+```
+
+# Performance measures
+
+All measures use the repetitions in which the method produced an estimate; failures and warnings are reported separately and are not removed.
+
+```{r}
+z=qnorm(0.975)
+metrics=results %>%
+  group_by(effect,truth,method,ratio,ntrt,nctrl) %>%
+  summarise(
+    n_sim=n(),
+    n_ok=sum(!is.na(est)),
+    fail=mean(is.na(est)),
+    warn=mean(!is.na(est) & !is.na(message) & message!=""),
+    # bias (analysis scale; log scale for the risk ratio)
+    bias=mean(est-theta,na.rm=TRUE),
+    mcse_bias=sd(est,na.rm=TRUE)/sqrt(n_ok),
+    # relative bias of the estimate on its natural scale (%)
+    relbias=ifelse(abs(first(truth))>0,100*(mean(result,na.rm=TRUE)/first(truth)-1),NA_real_),
+    # empirical SE
+    empse=sd(est,na.rm=TRUE),
+    mcse_empse=empse/sqrt(2*(n_ok-1)),
+    # mean squared error and its root
+    mse=mean((est-theta)^2,na.rm=TRUE),
+    mcse_mse=sqrt(sum(((est-theta)^2-mse)^2,na.rm=TRUE)/(n_ok*(n_ok-1))),
+    # model-based (bootstrap) SE
+    n_se=sum(!is.na(est) & !is.na(se_est)),
+    modse=sqrt(mean(se_est^2,na.rm=TRUE)),
+    mcse_modse=sqrt(var(se_est^2,na.rm=TRUE)/(4*n_se*modse^2)),
+    # coverage and rejection of the null (CI excludes 0 on the analysis scale)
+    cover=mean(abs(est-theta)<=z*se_est,na.rm=TRUE),
+    reject=mean(abs(est-null)>z*se_est,na.rm=TRUE),
+    # matching and weighting diagnostics
+    kept=mean(ntrt_post/ntrt,na.rm=TRUE),
+    smd_age_before=mean(abs(smdageb),na.rm=TRUE),
+    smd_age_after=mean(abs(smdagea),na.rm=TRUE),
+    smd_sex_before=mean(abs(smdsexb),na.rm=TRUE),
+    smd_sex_after=mean(abs(smdsexa),na.rm=TRUE),
+    ess=mean(ess,na.rm=TRUE),
+    .groups="drop") %>%
+  mutate(rmse=sqrt(mse),
+         mcse_rmse=mcse_mse/(2*rmse),
+         se_ratio=modse/empse,
+         relerr_se=100*(se_ratio-1),
+         mcse_relerr_se=100*se_ratio*sqrt(mcse_modse^2/modse^2+mcse_empse^2/empse^2),
+         mcse_cover=sqrt(cover*(1-cover)/n_se),
+         mcse_reject=sqrt(reject*(1-reject)/n_se),
+         ess=ifelse(is.nan(ess),NA_real_,ess)) %>%
+  left_join(methods,by="method")
+# save the full table for the paper and the supplement
+write_csv(metrics %>% select(-family,-algorithm,-caliper,-label),
+          paste0(out_dir,"performance_",gsub("[^A-Za-z0-9]+","_",branch),".csv"))
+```
+
+# Figures
+
+## Settings shared by all figures
+
+```{r}
+ratio_colours=c("1:1"="#1b9e77","1:2"="#d95f02","1:3"="#7570b3","none"="black")
+pd=position_dodge(width=0.6)
+theme_report=theme_bw(base_size=10)+
+  theme(strip.placement="outside",
+        strip.text.y.left=element_text(angle=0,face="bold"),
+        strip.background=element_rect(fill="white"),
+        legend.position="bottom",
+        panel.spacing.x=unit(0.8,"lines"))
+scale_lab=ifelse(scale=="ratio"," (log RR)","")
+measure_info=tibble(
+  measure=c("bias","empse","modse","rmse","cover","reject","kept"),
+  mcse=c("mcse_bias","mcse_empse","mcse_modse","mcse_rmse","mcse_cover","mcse_reject",NA),
+  name=c(paste0("Bias",scale_lab),paste0("Empirical SE",scale_lab),paste0("Bootstrap SE",scale_lab),
+         paste0("RMSE",scale_lab),"Coverage","Rejection rate","Treated kept"),
+  reference=c(0,NA,NA,NA,0.95,NA,1))
+scenario_label=function(ntrt,nctrl) paste0(ntrt," treated, ",nctrl," controls")
+file_tag=function(...) gsub("[^A-Za-z0-9.]+","_",paste(branch,...,sep="_"))
+```
+
+## Figure A: all measures for one scenario
+
+Rows are the methods grouped by family, colours the matching ratio, bars the 95% Monte Carlo intervals. Comparisons by ratio (colours), caliper and algorithm (neighbouring rows) and distance (stacked blocks) are all visible at once.
+
+```{r}
+plot_profile=function(eff,nt,nc){
+  d=metrics %>% filter(effect==eff,ntrt==nt,nctrl==nc)
+  long=bind_rows(lapply(seq_len(nrow(measure_info)),function(i){
+    mi=measure_info[i,]
+    d %>% transmute(family,label,ratio,measure=mi$name,
+                    est=.data[[mi$measure]],
+                    mc=if (is.na(mi$mcse)) 0 else .data[[mi$mcse]])
+  })) %>%
+    mutate(measure=factor(measure,levels=measure_info$name))
+  refl=measure_info %>% filter(!is.na(reference)) %>%
+    transmute(measure=factor(name,levels=measure_info$name),x=reference)
+  # the rejection rate is the type I error when the true effect is null
+  if (unique(d$truth)==ifelse(scale=="ratio",1,0)) refl=bind_rows(refl,tibble(measure=factor(measure_info$name[6],levels=measure_info$name),x=0.05))
+  ggplot(long,aes(x=est,y=label,colour=ratio))+
+    geom_vline(data=refl,aes(xintercept=x),linetype=2,colour="grey50")+
+    geom_errorbarh(aes(xmin=est-1.96*mc,xmax=est+1.96*mc),height=0,position=pd)+
+    geom_point(position=pd,size=1.8)+
+    facet_grid(family~measure,scales="free",space="free_y",switch="y")+
+    scale_colour_manual(values=ratio_colours)+
+    labs(x=NULL,y=NULL,colour="Ratio",
+         title=paste0(branch,": ",scenario_label(nt,nc),", true effect ",eff),
+         subtitle=paste0("Points: estimate; bars: 95% Monte Carlo interval (",min(d$n_sim)," repetitions)"))+
+    theme_report
+}
+plot_profile(ref_effect,ref_ntrt,ref_nctrl)
+```
+
+```{r}
+# save for every effect size and sample-size scenario (supplement)
+for (eff in levels(metrics$effect)){
+  scen=metrics %>% filter(effect==eff) %>% distinct(ntrt,nctrl)
+  for (i in seq_len(nrow(scen))){
+    ggsave(paste0(out_dir,file_tag("A_profile",eff,scen$ntrt[i],scen$nctrl[i]),".png"),
+           plot_profile(eff,scen$ntrt[i],scen$nctrl[i]),width=15,height=7,dpi=300)
+  }
+}
+```
+
+## Figure B: one measure across all sample-size scenarios
+
+```{r}
+plot_measure=function(meas,eff){
+  mi=measure_info %>% filter(measure==meas)
+  d=metrics %>% filter(effect==eff) %>%
+    mutate(est=.data[[meas]],mc=if (is.na(mi$mcse)) 0 else .data[[mi$mcse]],
+           trt=factor(paste0(ntrt," treated"),levels=paste0(sort(unique(ntrt))," treated")),
+           ctrl=factor(paste0(nctrl," controls"),levels=paste0(sort(unique(nctrl))," controls")))
+  g=ggplot(d,aes(x=est,y=label,colour=ratio))
+  if (!is.na(mi$reference)) g=g+geom_vline(xintercept=mi$reference,linetype=2,colour="grey50")
+  g+geom_errorbarh(aes(xmin=est-1.96*mc,xmax=est+1.96*mc),height=0,position=pd)+
+    geom_point(position=pd,size=1.5)+
+    facet_grid(family~trt+ctrl,scales="free_y",space="free_y",switch="y")+
+    scale_colour_manual(values=ratio_colours)+
+    labs(x=mi$name,y=NULL,colour="Ratio",
+         title=paste0(branch,": ",mi$name," by sample size, true effect ",eff))+
+    theme_report+theme(axis.text.x=element_text(angle=45,hjust=1),text=element_text(size=9))
+}
+plot_measure("rmse",ref_effect)
+```
+
+```{r}
+for (eff in levels(metrics$effect)){
+  for (meas in measure_info$measure){
+    ggsave(paste0(out_dir,file_tag("B",meas,eff),".png"),
+           plot_measure(meas,eff),width=16,height=7,dpi=300)
+  }
+}
+```
+
+## Figure C: overview of RMSE relative to the best method
+
+1.00 is the method with the lowest RMSE in that scenario; empty cells are ratios not available for that sample size.
+
+```{r}
+plot_heatmap=function(eff){
+  scen_levels=metrics %>% distinct(ntrt,nctrl) %>% arrange(ntrt,nctrl) %>% mutate(s=paste0(ntrt,"/",nctrl)) %>% pull(s)
+  metrics %>% filter(effect==eff) %>%
+    group_by(ntrt,nctrl) %>% mutate(rel=rmse/min(rmse,na.rm=TRUE)) %>% ungroup() %>%
+    mutate(row=paste0(family,": ",label," (",ratio,")"),
+           scen=factor(paste0(ntrt,"/",nctrl),levels=scen_levels)) %>%
+    ggplot(aes(x=scen,y=reorder(row,-rel,mean),fill=rel))+
+    geom_tile(colour="white")+
+    geom_text(aes(label=sprintf("%.2f",rel)),size=2.6)+
+    scale_fill_gradient(low="white",high="#d95f02",name="RMSE /\nbest")+
+    labs(x="Treated / controls",y=NULL,
+         title=paste0(branch,": RMSE relative to the best method, true effect ",eff))+
+    theme_minimal(base_size=9)
+}
+plot_heatmap(ref_effect)
+```
+
+```{r}
+for (eff in levels(metrics$effect)){
+  ggsave(paste0(out_dir,file_tag("C_heatmap",eff),".png"),plot_heatmap(eff),width=9,height=10,dpi=300)
+}
+```
+
+## Figure D: rejection rate across effect sizes
+
+Type I error at the null effect, power at the others. Needs results for more than one effect size.
+
+```{r}
+plot_rejection=function(nt,nc){
+  null_effect=ifelse(scale=="ratio",1,0)
+  metrics %>% filter(ntrt==nt,nctrl==nc) %>%
+    ggplot(aes(x=reject,y=label,colour=ratio))+
+    geom_vline(aes(xintercept=ifelse(truth==null_effect,0.05,NA_real_)),linetype=2,colour="grey50",na.rm=TRUE)+
+    geom_errorbarh(aes(xmin=reject-1.96*mcse_reject,xmax=reject+1.96*mcse_reject),height=0,position=pd)+
+    geom_point(position=pd,size=1.8)+
+    facet_grid(family~effect,scales="free_y",space="free_y",switch="y",
+               labeller=labeller(effect=function(x) paste("true effect",x)))+
+    scale_colour_manual(values=ratio_colours)+
+    labs(x="Rejection rate (type I error at the null, power otherwise)",y=NULL,colour="Ratio",
+         title=paste0(branch,": rejection rate, ",scenario_label(nt,nc)))+
+    theme_report
+}
+if (nlevels(metrics$effect)>1) plot_rejection(ref_ntrt,ref_nctrl)
+```
+
+```{r}
+if (nlevels(metrics$effect)>1){
+  scen=metrics %>% distinct(ntrt,nctrl)
+  for (i in seq_len(nrow(scen))){
+    ggsave(paste0(out_dir,file_tag("D_rejection",scen$ntrt[i],scen$nctrl[i]),".png"),
+           plot_rejection(scen$ntrt[i],scen$nctrl[i]),width=12,height=7,dpi=300)
+  }
+}
+```
+
+## Figure E: covariate balance
+
+Mean absolute SMD before and after matching or weighting (regression methods without weights have no "after").
+
+```{r}
+plot_balance=function(eff,nt,nc){
+  metrics %>% filter(effect==eff,ntrt==nt,nctrl==nc) %>%
+    select(family,label,ratio,smd_age_before,smd_age_after,smd_sex_before,smd_sex_after) %>%
+    pivot_longer(starts_with("smd"),names_to=c("covariate","timing"),names_pattern="smd_(age|sex)_(before|after)",values_to="smd") %>%
+    filter(!is.na(smd)) %>%
+    mutate(covariate=ifelse(covariate=="age","Age of onset","Sex"),
+           timing=factor(timing,levels=c("before","after"))) %>%
+    ggplot(aes(x=smd,y=label,colour=ratio,shape=timing))+
+    geom_vline(xintercept=0.1,linetype=2,colour="grey50")+
+    geom_point(position=pd,size=1.8)+
+    facet_grid(family~covariate,scales="free_y",space="free_y",switch="y")+
+    scale_colour_manual(values=ratio_colours)+
+    scale_shape_manual(values=c(before=1,after=16))+
+    labs(x="Mean absolute SMD",y=NULL,colour="Ratio",shape=NULL,
+         title=paste0(branch,": covariate balance, ",scenario_label(nt,nc)))+
+    theme_report
+}
+plot_balance(ref_effect,ref_ntrt,ref_nctrl)
+```
+
+```{r}
+for (eff in levels(metrics$effect)){
+  scen=metrics %>% filter(effect==eff) %>% distinct(ntrt,nctrl)
+  for (i in seq_len(nrow(scen))){
+    ggsave(paste0(out_dir,file_tag("E_balance",eff,scen$ntrt[i],scen$nctrl[i]),".png"),
+           plot_balance(eff,scen$ntrt[i],scen$nctrl[i]),width=10,height=7,dpi=300)
+  }
+}
+```
+
+## Figure F: distribution of the estimates
+
+```{r}
+plot_distribution=function(eff,nt,nc){
+  results %>% filter(effect==eff,ntrt==nt,nctrl==nc,!is.na(est)) %>%
+    left_join(methods,by="method") %>%
+    ggplot(aes(x=est,y=label,fill=ratio))+
+    geom_vline(aes(xintercept=theta),linetype=2,colour="grey50")+
+    geom_boxplot(outlier.size=0.5,position=position_dodge(width=0.8),width=0.7)+
+    facet_grid(family~.,scales="free_y",space="free_y",switch="y")+
+    scale_fill_manual(values=ratio_colours)+
+    labs(x=paste0("Estimate",scale_lab),y=NULL,fill="Ratio",
+         title=paste0(branch,": estimates, ",scenario_label(nt,nc),", true effect ",eff))+
+    theme_report
+}
+plot_distribution(ref_effect,ref_ntrt,ref_nctrl)
+```
+
+```{r}
+for (eff in levels(metrics$effect)){
+  scen=metrics %>% filter(effect==eff) %>% distinct(ntrt,nctrl)
+  for (i in seq_len(nrow(scen))){
+    ggsave(paste0(out_dir,file_tag("F_estimates",eff,scen$ntrt[i],scen$nctrl[i]),".png"),
+           plot_distribution(eff,scen$ntrt[i],scen$nctrl[i]),width=10,height=8,dpi=300)
+  }
+}
+```
+
+# Failures and warnings
+
+```{r}
+metrics %>% filter(fail>0 | warn>0) %>%
+  select(effect,method,ratio,ntrt,nctrl,n_sim,fail,warn,kept) %>% arrange(desc(fail),desc(warn))
+```
+
+# knitr
+
+```{r}
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\reporting\\report.qmd")
+```
