@@ -1,0 +1,152 @@
+---
+title: "Missing visits in the historical controls"
+format: html
+editor: visual
+---
+
+Sensitivity analysis on missing data. The populations of the main analysis are read once, follow-up visits of the **historical controls** are removed, and the result is saved, so that `single_methods` and `analysis_diff_0.15` use exactly the same data. Trial participants keep all protocol visits, and nobody loses the baseline visit.
+
+Two mechanisms:
+
+-   **MCAR**: every follow-up visit of a control is missing with the same probability.
+-   **MAR**: the probability that a visit is missing depends on the last *observed* HUI of that control (lower HUI, more likely to miss the visit). The intercept is calibrated so that, within the analysis window, about the same share of visits is missing as under MCAR. Because HUI declines over time, later visits are missed more often.
+
+Controls are the same patients with the same HUI in every population (the effect size only changes the treated), and the same seed is used for every file, so the missing visits are identical across effect sizes.
+
+# Libraries
+
+```{r}
+pacman::p_load(dplyr,ggplot2,readr)
+```
+
+# Settings
+
+```{r}
+base="C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\"
+# populations of the main analysis (one per effect size)
+in_dir=paste0(base,"Data\\paper\\main_analysis\\without duration\\continuous\\")
+effects=c("0","0.05","0.15","0.3")
+# where the populations with missing visits are saved
+out_dir=paste0(base,"Data\\paper\\sensitivity_analysis\\missing_data\\without duration\\")
+dir.create(out_dir,recursive=TRUE,showWarnings=FALSE)
+# share of follow-up visits of the controls that is missing
+p_miss=0.2
+# MAR: odds ratio of missing a visit for every 0.1 lower last observed HUI
+or_per_01=2
+# MAR: the share p_miss is calibrated on the visits in the analysis window (years since onset)
+calib_window=2
+# one seed per mechanism, the same for every effect size
+seed_mcar=20111; seed_mar=20112
+```
+
+# Functions
+
+```{r}
+# MCAR: each follow-up visit of a control is missing with probability p
+add_mcar=function(df,p,seed){
+  set.seed(seed)
+  df %>%
+    arrange(id,timen) %>%
+    group_by(id) %>%
+    mutate(missing=row_number()>1 & trt_overall==0 & runif(n())<p) %>%
+    ungroup() %>%
+    filter(!missing) %>%
+    select(-missing)
+}
+
+# MAR: the probability of missing visit k depends on the last observed HUI before visit k
+add_mar=function(df,target,or_per_01,window,seed){
+  set.seed(seed)
+  df=df %>% arrange(id,timen) %>% group_by(id) %>% mutate(visit=row_number()) %>% ungroup()
+  # log odds ratio per unit of HUI: lower HUI, higher probability of missing
+  b=-log(or_per_01)/0.1
+  # intercept calibrated on the previous (true) value, so that about `target` of the visits in the
+  # analysis window are missing (HUI declines over time, so later visits are missed more often);
+  # the realised share is printed below
+  prev=df %>% group_by(id) %>% mutate(prev=lag(hui_linear_trt)) %>% ungroup() %>% pull(prev)
+  ctrl_fu=df$trt_overall==0 & df$visit>1 & df$timen<=window
+  ref=mean(prev[ctrl_fu])
+  a=uniroot(function(a) mean(plogis(a+b*(prev[ctrl_fu]-ref)))-target,c(-20,20))$root
+  # visit by visit: the last observed value is updated only when the visit is observed
+  df$observed=TRUE
+  first=df$visit==1
+  last_obs=setNames(df$hui_linear_trt[first],as.character(df$id[first]))
+  for (k in 2:max(df$visit)){
+    rows=which(df$visit==k & df$trt_overall==0)
+    if (length(rows)==0) next
+    p=plogis(a+b*(last_obs[as.character(df$id[rows])]-ref))
+    missing=runif(length(rows))<p
+    df$observed[rows]=!missing
+    seen=rows[!missing]
+    last_obs[as.character(df$id[seen])]=df$hui_linear_trt[seen]
+  }
+  df %>% filter(observed) %>% select(-visit,-observed)
+}
+```
+
+# Add missing visits and save
+
+```{r}
+for (e in effects){
+  pop=readRDS(paste0(in_dir,"population_diff_",e,".rds"))
+  saveRDS(add_mcar(pop,p=p_miss,seed=seed_mcar),paste0(out_dir,"population_diff_",e,"_mcar.rds"))
+  saveRDS(add_mar(pop,target=p_miss,or_per_01=or_per_01,window=calib_window,seed=seed_mar),paste0(out_dir,"population_diff_",e,"_mar.rds"))
+}
+```
+
+# Checks
+
+Share of follow-up visits missing, by group, within the first two years (the analysis window).
+
+```{r}
+pop=readRDS(paste0(in_dir,"population_diff_0.15.rds"))
+mcar=readRDS(paste0(out_dir,"population_diff_0.15_mcar.rds"))
+mar=readRDS(paste0(out_dir,"population_diff_0.15_mar.rds"))
+fu=function(d) d %>% arrange(id,timen) %>% group_by(id) %>% filter(row_number()>1,timen<=2) %>% ungroup()
+share_missing=function(d) fu(d) %>% count(trt_overall,name="visits") %>%
+  left_join(fu(pop) %>% count(trt_overall,name="planned"),by="trt_overall") %>%
+  mutate(missing=round(1-visits/planned,3))
+bind_rows(share_missing(mcar) %>% mutate(mechanism="MCAR"),
+          share_missing(mar) %>% mutate(mechanism="MAR"))
+```
+
+Under MAR, controls with a lower HUI at the previous visit miss more visits; under MCAR the share is flat.
+
+```{r}
+prev_hui=fu(pop %>% arrange(id,timen) %>% group_by(id) %>% mutate(prev=lag(hui_linear_trt)) %>% ungroup()) %>%
+  filter(trt_overall==0) %>%
+  mutate(group=cut(prev,quantile(prev,0:5/5,na.rm=TRUE),include.lowest=TRUE,labels=paste("Q",1:5)))
+check=bind_rows(lapply(list(MCAR=mcar,MAR=mar),function(d){
+  prev_hui %>% left_join(d %>% select(id,timen) %>% mutate(kept=TRUE),by=c("id","timen")) %>%
+    mutate(kept=!is.na(kept))
+}),.id="mechanism")
+check %>% group_by(mechanism,group) %>% summarise(missing=round(1-mean(kept),3),.groups="drop") %>%
+  ggplot(aes(x=group,y=missing,fill=mechanism))+
+  geom_col(position="dodge")+
+  labs(x="HUI at the previous visit (quintiles, Q1 = lowest)",y="Share of visits missing",fill=NULL,
+       title="Controls: missing visits by previous HUI")+
+  theme_bw()
+```
+
+Ten random controls, with all visits (grey) and the visits kept under each mechanism.
+
+```{r}
+set.seed(181299)
+ids=sample(unique(pop$id[pop$trt_overall==0]),10)
+bind_rows(pop %>% mutate(data="all visits"),
+          mcar %>% mutate(data="MCAR"),
+          mar %>% mutate(data="MAR")) %>%
+  filter(id %in% ids,timen<=2) %>%
+  ggplot(aes(x=timen,y=hui_linear_trt,group=id,colour=factor(id)))+
+  geom_point()+geom_line()+
+  facet_wrap(~factor(data,levels=c("all visits","MCAR","MAR")))+
+  guides(colour="none")+
+  labs(x="Years since onset",y="HUI")+
+  theme_bw()
+```
+
+# knitr
+
+```{r}
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\missing_data\\without_duration\\dgm\\missingness.qmd")
+```

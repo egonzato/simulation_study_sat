@@ -25,52 +25,17 @@ sapply(files, source)
 
 # Load dataset
 
+Population with missing visits for the historical controls, created once in `dgm/missingness.qmd` (checks and plots of the missing visits are there).
+
 ```{r,warning=FALSE}
-df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\continuous\\population_diff_0.15.rds") %>% 
+# missingness mechanism: "mcar" or "mar"
+mechanism="mcar"
+df=readRDS(paste0("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\sensitivity_analysis\\missing_data\\without duration\\population_diff_0.15_",mechanism,".rds")) %>% 
   filter(timen<=2) %>% 
   select(id,timen,trt_overall,trt,aoo,sex,hui_linear_trt,yoo) %>% 
   group_by(id,trt) %>% 
   filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9)))) %>% 
   ungroup()
-```
-
-Plot ten random patients without missingess
-
-```{r}
-set.seed(181299)
-ids=sample(df$id,10)
-# plot cluster without baseline
-df %>% 
-  filter(id %in% ids) %>%
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
-  geom_point()+
-  geom_line()+
-  guides(col='none')+
-  facet_wrap(~trt)+
-  theme_bw()
-```
-
-Add missingness
-
-```{r}
-df=df %>% 
-  group_by(id) %>% 
-  mutate(pmiss=ifelse(row_number()==1 | trt_overall==1,0,0.2),
-         flag=rbinom(n=n(),size=1,prob=pmiss)) %>%
-  filter(flag==0)
-```
-
-Plot the same ten random patients with missngess
-
-```{r}
-df %>% 
-  filter(id %in% ids) %>%
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
-  geom_point()+
-  geom_line()+
-  guides(col='none')+
-  facet_wrap(~trt)+
-  theme_bw()
 ```
 
 ## Create dftrial
@@ -460,5 +425,5 @@ ate=gcomp(trialdf %>%
 # purl
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\single_methods\\single_methods.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\missing_data\\without_duration\\single_methods\\single_methods.qmd")
 ```
