@@ -34,6 +34,45 @@ df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with E
   ungroup()
 ```
 
+Plot ten random patients without missingess
+
+```{r}
+set.seed(181299)
+ids=sample(df$id,10)
+# plot cluster without baseline
+df %>% 
+  filter(id %in% ids) %>%
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  facet_wrap(~trt)+
+  theme_bw()
+```
+
+Add missingness
+
+```{r}
+df=df %>% 
+  group_by(id) %>% 
+  mutate(pmiss=ifelse(row_number()==1 | trt_overall==1,0,0.2),
+         flag=rbinom(n=n(),size=1,prob=pmiss)) %>%
+  filter(flag==0)
+```
+
+Plot the same ten random patients with missngess
+
+```{r}
+df %>% 
+  filter(id %in% ids) %>%
+  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
+  geom_point()+
+  geom_line()+
+  guides(col='none')+
+  facet_wrap(~trt)+
+  theme_bw()
+```
+
 ## Create dftrial
 
 ```{r}
