@@ -69,7 +69,7 @@ ggdag(model, text = T, text_size = 3, text_col = 'white', edge_type = "link_arc"
 ```{r}
 set.seed(3111963)
 # define N
-n=1e6
+n=1e4
 # define start and end of registry
 start_date=as.Date("2005-01-01")
 end_date=as.Date("2022-12-31")
@@ -99,6 +99,7 @@ set.seed(181299)
 covs=data.frame(id=1:n,
               aoo=runif(n,0,8),
               event=1,
+              dateonset=as.Date(onsetdatev),
               u=runif(n,0,1),
               e=rnorm(n,0.5,0.02),
               sex=sample(c('male','female'),n,replace=T))
@@ -144,7 +145,8 @@ Simulate outcome without the treatment.
 
 ```{r}
 df=df %>% 
-  mutate(hui_linear_untrt = (b0+u0) + 0.03*aoo + 0.01*(sex=="male") + 0.0002*yoo -0.1*timen+epsilon)
+  mutate(timen=as.numeric(date-dateonset)/365.25,
+         hui_linear_untrt = (b0+u0) + 0.03*aoo + 0.01*(sex=="male") + 0.0002*yoo -0.1*timen+epsilon)
 ```
 
 Plot data for fifteen patients
@@ -259,11 +261,11 @@ df=df %>%
 Loop to redefine date
 
 ```{r}
-for (i in 2:nrow(df)){
-  if (df$trt[i]==1 & df$id[i]==df$id[i-1] & df$date[i]!=df$starttrial[i]){
-    df$date[i]=df$date[i-1]+90
-  } 
-}
+# loop to redefine dates
+df=df %>% 
+  group_by(id) %>% 
+  mutate(date=if_else(trt==1, starttrial+90*(cumsum(trt)-1), date)) %>% 
+  ungroup()
 ```
 
 Define treatment effect
