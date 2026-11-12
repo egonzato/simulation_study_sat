@@ -384,5 +384,5 @@ metrics %>% filter(fail>0 | warn>0) %>%
 # knitr
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\reporting\\report.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\time_to_event\\risk\\reporting\\report.qmd")
 ```
