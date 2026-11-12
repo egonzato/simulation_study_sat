@@ -32,12 +32,19 @@ ref_effect="0.15"; ref_ntrt=30; ref_nctrl=100
 # folder where all figures and the table of performance measures are saved
 out_dir=paste0(base,"Results\\paper\\main_analysis\\with duration\\continuous\\")
 dir.create(out_dir,recursive=TRUE,showWarnings=FALSE)
+# optional: performance tables (CSV) saved by this file for other branches, to compare branches side by side
+# e.g. compare_files=c("Anchored"=paste0(...,"performance_Anchored_time_to_event.csv"),"Unanchored"=...)
+compare_files=c()
+# helpers for titles and file names
+scenario_label=function(ntrt,nctrl) paste0(ntrt," treated, ",nctrl," controls")
+file_tag=function(...) gsub("[^A-Za-z0-9.]+","_",paste(branch,...,sep="_"))
 ```
 
 Examples for the other branches:
 
 -   anchored continuous: `results_files=c("0.15"=paste0(base,"Data\\paper\\main_analysis\\without duration\\continuous\\results_diff_0.15.rds"))`, `scale="difference"`
 -   time-to-event: `results_files=c("1"=..._rr_1...rds, "0.75"=..., "0.5"=..., "0.25"=...)`, `truths=c("1"=1,"0.75"=0.75,"0.5"=0.5,"0.25"=0.25)`, `scale="ratio"`, `ref_effect="0.5"`
+-   comparison of branches: run this file once per branch, then list the saved `performance_*.csv` files in `compare_files`
 
 # Load results
 
@@ -59,8 +66,31 @@ if (scale=="ratio"){
 } else {
   results=results %>% mutate(est=result,theta=truth,se_est=se,null=0)
 }
+# columns that only exist in some branches (survival: events and Cox model class; regression: ESS)
+for (v in c("class","ntrt_event_post","nctrl_event_post","event_before","ess","ntrt_post",
+            "smdageb","smdagea","smdsexb","smdsexa","message","se")){
+  if (!v %in% names(results)) results[[v]]=NA
+}
 # rows per method and scenario
 results %>% count(effect,method,ratio,ntrt,nctrl) %>% summarise(min_reps=min(n),max_reps=max(n))
+```
+
+# Simulated data
+
+Description of the samples drawn in each scenario, before any matching or weighting: one row per repetition (the SMDs and events before matching are the same for every method).
+
+```{r}
+simulated=results %>%
+  distinct(effect,ntrt,nctrl,sim,.keep_all=TRUE) %>%
+  group_by(effect,truth,ntrt,nctrl) %>%
+  summarise(repetitions=n(),
+            smd_age=mean(abs(smdageb),na.rm=TRUE),
+            smd_sex=mean(abs(smdsexb),na.rm=TRUE),
+            events_in_sample=mean(as.numeric(event_before),na.rm=TRUE),
+            .groups="drop") %>%
+  mutate(events_in_sample=ifelse(is.nan(events_in_sample),NA_real_,events_in_sample))
+simulated
+write_csv(simulated,paste0(out_dir,"simulated_data_",gsub("[^A-Za-z0-9]+","_",branch),".csv"))
 ```
 
 # Methods
@@ -112,10 +142,21 @@ metrics=results %>%
     n_sim=n(),
     n_ok=sum(!is.na(est)),
     fail=mean(is.na(est)),
+    # partial: an estimate was produced, but not all treated were kept
+    partial=ifelse(all(is.na(ntrt_post)),NA_real_,mean(!is.na(est) & ntrt_post<ntrt,na.rm=TRUE)),
+    # survival: share of fits that needed the ridge-penalised Cox model, and events after matching
+    ridge=ifelse(all(is.na(class)),NA_real_,mean(class[!is.na(est)]=="coxph.penal",na.rm=TRUE)),
+    events_trt=mean(ntrt_event_post[!is.na(est)],na.rm=TRUE),
+    events_ctrl=mean(nctrl_event_post[!is.na(est)],na.rm=TRUE),
+    zero_events_trt=mean(ntrt_event_post[!is.na(est)]==0,na.rm=TRUE),
+    events_sample=mean(as.numeric(event_before),na.rm=TRUE),
     warn=mean(!is.na(est) & !is.na(message) & message!=""),
     # bias (analysis scale; log scale for the risk ratio)
     bias=mean(est-theta,na.rm=TRUE),
     mcse_bias=sd(est,na.rm=TRUE)/sqrt(n_ok),
+    # median bias and median estimate on the natural scale (robust to a few extreme estimates)
+    medbias=median(est-theta,na.rm=TRUE),
+    median_estimate=median(result,na.rm=TRUE),
     # relative bias of the estimate on its natural scale (%)
     relbias=ifelse(abs(first(truth))>0,100*(mean(result,na.rm=TRUE)/first(truth)-1),NA_real_),
     # empirical SE
@@ -146,11 +187,41 @@ metrics=results %>%
          mcse_relerr_se=100*se_ratio*sqrt(mcse_modse^2/modse^2+mcse_empse^2/empse^2),
          mcse_cover=sqrt(cover*(1-cover)/n_se),
          mcse_reject=sqrt(reject*(1-reject)/n_se),
-         ess=ifelse(is.nan(ess),NA_real_,ess)) %>%
+         across(c(ess,events_trt,events_ctrl,zero_events_trt,events_sample),~ifelse(is.nan(.x),NA_real_,.x))) %>%
   left_join(methods,by="method")
 # save the full table for the paper and the supplement
 write_csv(metrics %>% select(-family,-algorithm,-caliper,-label),
           paste0(out_dir,"performance_",gsub("[^A-Za-z0-9]+","_",branch),".csv"))
+```
+
+# Table of results for the reference scenario
+
+Estimate (Monte Carlo SE) for the main measures; the same values for every scenario are in the saved `performance_*.csv`.
+
+```{r}
+fmt=function(x,mc,d=3) ifelse(is.na(x),"",ifelse(is.na(mc),sprintf(paste0("%.",d,"f"),x),
+                                                   sprintf(paste0("%.",d,"f (%.",d,"f)"),x,mc)))
+make_table=function(eff,nt,nc){
+  metrics %>% filter(effect==eff,ntrt==nt,nctrl==nc) %>%
+    arrange(family,desc(label),ratio) %>%
+    transmute(Family=family,Method=label,Ratio=ratio,
+              Bias=fmt(bias,mcse_bias),`Median bias`=fmt(medbias,NA),
+              `Empirical SE`=fmt(empse,mcse_empse),`Bootstrap SE`=fmt(modse,mcse_modse),
+              RMSE=fmt(rmse,mcse_rmse),Coverage=fmt(cover,mcse_cover),`Rejection rate`=fmt(reject,mcse_reject),
+              `Treated kept`=fmt(kept,NA,2),Failed=fmt(fail,NA,2))
+}
+tab=make_table(ref_effect,ref_ntrt,ref_nctrl)
+knitr::kable(tab)
+```
+
+```{r}
+for (eff in levels(metrics$effect)){
+  scen=metrics %>% filter(effect==eff) %>% distinct(ntrt,nctrl)
+  for (i in seq_len(nrow(scen))){
+    write_csv(make_table(eff,scen$ntrt[i],scen$nctrl[i]),
+              paste0(out_dir,file_tag("table",eff,scen$ntrt[i],scen$nctrl[i]),".csv"))
+  }
+}
 ```
 
 # Figures
@@ -173,8 +244,6 @@ measure_info=tibble(
   name=c(paste0("Bias",scale_lab),paste0("Empirical SE",scale_lab),paste0("Bootstrap SE",scale_lab),
          paste0("RMSE",scale_lab),"Coverage","Rejection rate","Treated kept"),
   reference=c(0,NA,NA,NA,0.95,NA,1))
-scenario_label=function(ntrt,nctrl) paste0(ntrt," treated, ",nctrl," controls")
-file_tag=function(...) gsub("[^A-Za-z0-9.]+","_",paste(branch,...,sep="_"))
 ```
 
 ## Figure A: all measures for one scenario
@@ -374,11 +443,127 @@ for (eff in levels(metrics$effect)){
 }
 ```
 
-# Failures and warnings
+## Figure G: bias against precision
+
+Each point is a method and ratio; dashed circles are lines of equal RMSE (bias² + empirical SE² = RMSE²). Methods to the lower left are both precise and unbiased; methods far from the horizontal line buy precision with bias, or the reverse.
 
 ```{r}
-metrics %>% filter(fail>0 | warn>0) %>%
-  select(effect,method,ratio,ntrt,nctrl,n_sim,fail,warn,kept) %>% arrange(desc(fail),desc(warn))
+plot_tradeoff=function(eff,nt,nc){
+  d=metrics %>% filter(effect==eff,ntrt==nt,nctrl==nc)
+  r_lev=pretty(range(d$rmse,na.rm=TRUE),n=4); r_lev=r_lev[r_lev>0]
+  circles=bind_rows(lapply(r_lev,function(r){
+    a=seq(-pi/2,pi/2,length.out=200); tibble(rmse=r,x=r*cos(a),y=r*sin(a))}))
+  ggplot(d,aes(x=empse,y=bias))+
+    geom_path(data=circles,aes(x=x,y=y,group=rmse),linetype=3,colour="grey60")+
+    geom_hline(yintercept=0,linetype=2,colour="grey50")+
+    geom_point(aes(colour=family,shape=ratio),size=2.5)+
+    coord_cartesian(xlim=c(0,max(d$empse,na.rm=TRUE)*1.1),
+                    ylim=range(c(d$bias,0),na.rm=TRUE)*1.1)+
+    scale_shape_manual(values=c("1:1"=16,"1:2"=17,"1:3"=15,"none"=4))+
+    labs(x=paste0("Empirical SE",scale_lab),y=paste0("Bias",scale_lab),colour="Method",shape="Ratio",
+         title=paste0(branch,": bias against precision, ",scenario_label(nt,nc),", true effect ",eff),
+         subtitle=paste0("Dotted circles: equal RMSE (",paste(r_lev,collapse=", "),")"))+
+    theme_bw(base_size=10)+theme(legend.position="right")
+}
+plot_tradeoff(ref_effect,ref_ntrt,ref_nctrl)
+```
+
+```{r}
+for (eff in levels(metrics$effect)){
+  scen=metrics %>% filter(effect==eff) %>% distinct(ntrt,nctrl)
+  for (i in seq_len(nrow(scen))){
+    ggsave(paste0(out_dir,file_tag("G_tradeoff",eff,scen$ntrt[i],scen$nctrl[i]),".png"),
+           plot_tradeoff(eff,scen$ntrt[i],scen$nctrl[i]),width=10,height=6,dpi=300)
+  }
+}
+```
+
+## Figure H: treated kept against RMSE
+
+The price of discarding treated patients (calipers, infeasible optimal matches): methods to the left keep fewer of the treated.
+
+```{r}
+plot_kept=function(eff,nt,nc){
+  metrics %>% filter(effect==eff,ntrt==nt,nctrl==nc,!is.na(kept)) %>%
+    ggplot(aes(x=kept,y=rmse,colour=family,shape=ratio))+
+    geom_errorbar(aes(ymin=rmse-1.96*mcse_rmse,ymax=rmse+1.96*mcse_rmse),width=0,alpha=0.5)+
+    geom_point(size=2.5)+
+    scale_shape_manual(values=c("1:1"=16,"1:2"=17,"1:3"=15,"none"=4))+
+    labs(x="Treated kept",y=paste0("RMSE",scale_lab),colour="Method",shape="Ratio",
+         title=paste0(branch,": treated kept against RMSE, ",scenario_label(nt,nc),", true effect ",eff))+
+    theme_bw(base_size=10)
+}
+plot_kept(ref_effect,ref_ntrt,ref_nctrl)
+```
+
+```{r}
+for (eff in levels(metrics$effect)){
+  scen=metrics %>% filter(effect==eff) %>% distinct(ntrt,nctrl)
+  for (i in seq_len(nrow(scen))){
+    ggsave(paste0(out_dir,file_tag("H_kept",eff,scen$ntrt[i],scen$nctrl[i]),".png"),
+           plot_kept(eff,scen$ntrt[i],scen$nctrl[i]),width=9,height=6,dpi=300)
+  }
+}
+```
+
+# Failures, partial matches and fallbacks
+
+-   **failed**: no estimate (e.g. infeasible optimal matching, empty matched set)
+-   **partial**: an estimate, but not all treated were kept (caliper, sex group dropped, no eligible control)
+-   **ridge**: survival only, share of estimates from the ridge-penalised Cox model (no convergence, usually no events among the treated)
+-   **warnings**: an estimate with a warning from the model (e.g. convergence of the mixed model)
+
+```{r}
+problems=metrics %>%
+  group_by(effect,family,label,ratio) %>%
+  summarise(failed=mean(fail),partial=mean(partial),ridge=mean(ridge),warnings=mean(warn),
+            treated_kept=mean(kept),events_treated=mean(events_trt),zero_events_treated=mean(zero_events_trt),
+            .groups="drop") %>%
+  mutate(across(where(is.numeric),~round(ifelse(is.nan(.x),NA,.x),3)))
+problems %>% filter(effect==ref_effect)
+write_csv(problems,paste0(out_dir,"problems_",gsub("[^A-Za-z0-9]+","_",branch),".csv"))
+```
+
+```{r}
+# methods and scenarios with any failure, partial match, fallback or warning
+metrics %>% filter(fail>0 | coalesce(partial,0)>0 | coalesce(ridge,0)>0 | warn>0) %>%
+  select(effect,method,ratio,ntrt,nctrl,n_sim,fail,partial,ridge,warn,kept) %>%
+  arrange(desc(fail),desc(ridge))
+```
+
+# Comparison of branches
+
+Needs the `performance_*.csv` of at least two branches in `compare_files` (run this file once per branch first). Bias and RMSE of the same methods side by side, for the reference scenario.
+
+```{r}
+if (length(compare_files)>1){
+  comp_raw=bind_rows(lapply(names(compare_files),function(b){
+    read_csv(compare_files[[b]],show_col_types=FALSE) %>% mutate(branch=b,effect=as.character(effect))
+  }))
+  comp=comp_raw %>%
+    filter(effect==ref_effect,ntrt==ref_ntrt,nctrl==ref_nctrl) %>%
+    left_join(describe(unique(comp_raw$method)),by="method") %>%
+    mutate(family=factor(family,levels=intersect(family_levels,family)),
+           label=factor(label,levels=rev(intersect(label_levels,label))),
+           ratio=factor(ratio,levels=c("1:1","1:2","1:3","none")),
+           branch=factor(branch,levels=names(compare_files))) %>%
+    select(branch,family,label,ratio,bias,mcse_bias,rmse,mcse_rmse) %>%
+    pivot_longer(c(bias,rmse),names_to="measure",values_to="est") %>%
+    mutate(mc=ifelse(measure=="bias",mcse_bias,mcse_rmse),
+           measure=ifelse(measure=="bias",paste0("Bias",scale_lab),paste0("RMSE",scale_lab)))
+  g_comp=ggplot(comp,aes(x=est,y=label,colour=ratio))+
+    geom_vline(data=tibble(measure=paste0("Bias",scale_lab),x=0),aes(xintercept=x),linetype=2,colour="grey50")+
+    geom_errorbarh(aes(xmin=est-1.96*mc,xmax=est+1.96*mc),height=0,position=pd)+
+    geom_point(position=pd,size=1.8)+
+    facet_grid(family~measure+branch,scales="free",space="free_y",switch="y")+
+    scale_colour_manual(values=ratio_colours)+
+    labs(x=NULL,y=NULL,colour="Ratio",
+         title=paste0("Comparison of branches: ",scenario_label(ref_ntrt,ref_nctrl),", true effect ",ref_effect))+
+    theme_report
+  print(g_comp)
+  ggsave(paste0(out_dir,"I_comparison_",gsub("[^A-Za-z0-9.]+","_",paste(names(compare_files),collapse="_vs_")),".png"),
+         g_comp,width=14,height=7,dpi=300)
+}
 ```
 
 # knitr
