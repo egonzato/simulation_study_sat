@@ -77,7 +77,7 @@ treateddf=trialdf %>%
 
 ```{r}
 matched=duration_matching_interpolation(data=trialdf,identifier=id,
-                                        y=hui_linear_trt,
+                                        y=hui_trt,
                  treatment=trt_overall,
                  duration=duration,time=timen,
                  ratio=2)
@@ -142,7 +142,7 @@ ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 ### single procedure
 
 ```{r}
-matched=matching_interpolation(data=trialdf,identifier=id,y=hui_linear_trt,
+matched=matching_interpolation(data=trialdf,identifier=id,y=hui_trt,
                  treatment=trt_overall,ageofonset=aoo,
                  sex=sex,duration=duration,time=timen,
                  ratio=1,
@@ -213,7 +213,7 @@ ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 
 ```{r}
 matched=psm_matching_interpolation(data=trialdf,identifier=id,
-                                   outcome=hui_linear_trt,
+                                   outcome=hui_trt,
                      formula=trt_overall~aoo+sex,duration=duration,time=timen,
                      ratio=2,replacement=F,tune=F,
                      distance='glm',method='greedy',caliper=NULL)
@@ -281,7 +281,7 @@ ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 
 ```{r}
 matched=psm_matching_interpolation(data=trialdf,
-                                   identifier=id,outcome=hui_linear_trt,
+                                   identifier=id,outcome=hui_trt,
                      formula=trt_overall~aoo+sex,duration=duration,time=timen,
                      ratio=2,replacement=F,tune=F,seed=181299,
                      distance='glm',method='optimal',caliper=NULL)
@@ -312,7 +312,7 @@ ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 
 ```{r}
 matched=psm_matching_interpolation(data=trialdf,identifier=id,
-                                   outcome=hui_linear_trt,
+                                   outcome=hui_trt,
                      formula=trt_overall~aoo+sex,
                      duration=duration,time=timen,
                      ratio=2,replacement=F,tune=F,

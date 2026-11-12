@@ -116,7 +116,7 @@ df=df %>%
 ## -------------------------------------------------------------------------------------------------------
 df=df %>% 
   mutate(timen=as.numeric(date-dateonset)/365.25,
-         hui_linear_untrt = (b0+u0) + 0.03*aoo + 0.01*(sex=="male") + 0.0002*yoo -0.1*timen+epsilon)
+         hui_untrt = (b0+u0) + 0.03*aoo + 0.01*(sex=="male") + 0.0002*yoo -0.1*timen+epsilon)
 
 
 ## -------------------------------------------------------------------------------------------------------
@@ -125,7 +125,7 @@ ids=sample(unique(df$id),15)
 # plot those random individuals
 df %>% 
   filter(id %in% ids) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_untrt,group=id))+
+  ggplot(.,aes(x=timen,y=hui_untrt,group=id))+
   geom_point()+
   geom_line()+
   labs(x='Disease duration',y='HUI (quadratic)')+
@@ -139,7 +139,7 @@ ids=sample(unique(df$id),15)
 # plot those random individuals
 df %>% 
   filter(id %in% ids) %>% 
-  ggplot(.,aes(x=date,y=hui_linear_untrt,group=id))+
+  ggplot(.,aes(x=date,y=hui_untrt,group=id))+
   geom_point()+
   geom_line()+
   labs(x='Disease duration',y='HUI (linear)')+
@@ -224,7 +224,7 @@ df=df %>%
          timen_trt=ifelse(trt==0,
                           0,
                           as.numeric(date-starttrial)/365.25),
-         hui_linear_trt=hui_linear_untrt+0*trt+0.05*trt*timen_trt) %>% 
+         hui_trt=hui_untrt+0*trt+0.05*trt*timen_trt) %>% 
   group_by(id,trt) %>% 
   filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9))))
 
@@ -245,7 +245,7 @@ df=df %>%
 # plot
 df %>% 
   #filter(year(date)>2013 & trt_overall==0) %>% 
-  ggplot(aes(x = date, y = hui_linear_trt,col=factor(trt),group=id)) +
+  ggplot(aes(x = date, y = hui_trt,col=factor(trt),group=id)) +
   geom_point()+
   geom_line()+
   scale_color_manual(values = c('#FF3300','#0099FF'))+
@@ -262,10 +262,10 @@ df %>%
   filter(id %in% singleid) %>%
   filter(miss==0) %>% 
   ggplot() +
-  geom_point(aes(x = date, y = hui_linear_trt), col = '#0099FF') +
-  geom_line(aes(x = date, y = hui_linear_trt), col = '#0099FF') +
-  geom_point(aes(x = date, y = hui_linear_untrt), col = '#FF3300') +
-  geom_line(aes(x = date, y = hui_linear_untrt), col = '#FF3300') +
+  geom_point(aes(x = date, y = hui_trt), col = '#0099FF') +
+  geom_line(aes(x = date, y = hui_trt), col = '#0099FF') +
+  geom_point(aes(x = date, y = hui_untrt), col = '#FF3300') +
+  geom_line(aes(x = date, y = hui_untrt), col = '#FF3300') +
   labs(x = 'Disease duration', y = 'HUI (linear)') +
   geom_hline(yintercept = -0.5, lty = 2) +
   theme_bw()

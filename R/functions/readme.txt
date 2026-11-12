@@ -18,7 +18,7 @@ In matching with duration for continuous events, the output can be complicated:
 
 
 To align correctly:
-	- original: hui_linear_trt vs timen
-	- aligned:  hui_linear_trt vs time_aligned (group by trt to see change in disease course)
-	- filtered: hui_linear_trt vs time_aligned (can group by either trt or trt_overall)
+	- original: hui_trt vs timen
+	- aligned:  hui_trt vs time_aligned (group by trt to see change in disease course)
+	- filtered: hui_trt vs time_aligned (can group by either trt or trt_overall)
 	- interpolated: y vs time_aligned (can group by either trt or trt_overall)

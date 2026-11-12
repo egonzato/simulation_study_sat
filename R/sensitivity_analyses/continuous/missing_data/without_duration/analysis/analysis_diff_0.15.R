@@ -10,7 +10,7 @@ pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,smd,WeightIt,lme4,
 mechanism="mcar"
 df=readRDS(paste0("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\sensitivity_analysis\\missing_data\\without duration\\population_diff_0.15_",mechanism,".rds")) %>% 
   filter(timen<=2) %>% 
-  select(id,timen,trt_overall,trt,aoo,sex,hui_linear_trt,yoo) %>% 
+  select(id,timen,trt_overall,trt,aoo,sex,hui_trt,yoo) %>% 
   group_by(id,trt) %>% 
   filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9)))) %>% 
   ungroup()

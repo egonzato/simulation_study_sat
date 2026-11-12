@@ -88,7 +88,7 @@ df_sim=df %>%
     group_by(id) %>% 
     mutate(trialdate=as.Date("2021-05-31"),
            trt_yoo=ifelse(dateonset>=trialdate,1,0),
-           ptrt_conf=1/(1+exp(-(-1 - 0.304*aoo + 1.41*I(sex=='male')))),
+           ptrt_conf=1/(1+exp(-(-1 - 0.304*aoo + 1.418*I(sex=='male')))),
            trt_conf=rbinom(1,1,ptrt_conf),
            trt=ifelse(trt_conf == 1 & trt_yoo == 1,1,0),
            trt_overall=ifelse(sum(trt)>=1,1,0)) %>% ungroup()
@@ -120,6 +120,8 @@ Loop through effect sizes
 set.seed(181299)
 # targets
 gammas=c(0.0000,0.0961,0.3164,0.8172)
+# true effects at 2 years are 2*targets (0, 0.05, 0.15, 0.30), used in the file names as in the linear branch
+targets=c(0,0.025,0.075,0.15)
 # set path
 folder="C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\continuous\\population_logistic_diff_"
 # save multiple dataset
@@ -128,7 +130,7 @@ for (i in 1:length(gammas)){
   # define treatment effect and  select only certain time points
 df_sim=df_sim %>% 
   mutate(timen=as.numeric(date-firstvisit)/365.25,
-         eta0=2.0877+u0+0.0299*(aoo-mean(covs$aoo))-0.1406*((sex=="male")-mean(covs$sex=="male"))+0.0183*yoo_c-0.62*timen,
+         eta0=2.0877+u0+0.0299*(aoo-mean(covs$aoo))-0.1406*((sex=="male")-mean(covs$sex=="male"))+0.0183*yoo_c-0.6219*timen,
          hui_untrt=-0.36+(1+0.36)*expit(eta0+eps),
          hui_trt=-0.36+(1+0.36)*expit(eta0+gammas[i]*trt*timen+eps))
   # define dataset
@@ -142,5 +144,5 @@ df_sim=df_sim %>%
 Purl
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\effect_size_loop_logistic.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\logistic\\effect_size_loop_logistic.qmd")
 ```

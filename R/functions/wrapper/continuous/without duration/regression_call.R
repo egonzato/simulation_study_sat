@@ -49,7 +49,7 @@ regression_call=function(data,id=NULL,time="timen",methods){
   dataset %>% 
     group_by(!!id_enquo) %>% 
     arrange(!!time_var) %>% 
-    mutate(hui_baseline=first(hui_linear_trt)) %>% 
+    mutate(hui_baseline=first(hui_trt)) %>% 
     filter(row_number()!=1) %>% 
     ungroup()
 }

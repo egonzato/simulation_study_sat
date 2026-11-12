@@ -63,14 +63,14 @@ add_mar=function(df,target,or_per_01,window,seed){
   # intercept calibrated on the previous (true) value, so that about `target` of the visits in the
   # analysis window are missing (HUI declines over time, so later visits are missed more often);
   # the realised share is printed below
-  prev=df %>% group_by(id) %>% mutate(prev=lag(hui_linear_trt)) %>% ungroup() %>% pull(prev)
+  prev=df %>% group_by(id) %>% mutate(prev=lag(hui_trt)) %>% ungroup() %>% pull(prev)
   ctrl_fu=df$trt_overall==0 & df$visit>1 & df$timen<=window
   ref=mean(prev[ctrl_fu])
   a=uniroot(function(a) mean(plogis(a+b*(prev[ctrl_fu]-ref)))-target,c(-20,20))$root
   # visit by visit: the last observed value is updated only when the visit is observed
   df$observed=TRUE
   first=df$visit==1
-  last_obs=setNames(df$hui_linear_trt[first],as.character(df$id[first]))
+  last_obs=setNames(df$hui_trt[first],as.character(df$id[first]))
   for (k in 2:max(df$visit)){
     rows=which(df$visit==k & df$trt_overall==0)
     if (length(rows)==0) next
@@ -78,7 +78,7 @@ add_mar=function(df,target,or_per_01,window,seed){
     missing=runif(length(rows))<p
     df$observed[rows]=!missing
     seen=rows[!missing]
-    last_obs[as.character(df$id[seen])]=df$hui_linear_trt[seen]
+    last_obs[as.character(df$id[seen])]=df$hui_trt[seen]
   }
   df %>% filter(observed) %>% select(-visit,-observed)
 }
@@ -113,7 +113,7 @@ bind_rows(share_missing(mcar) %>% mutate(mechanism="MCAR"),
 Under MAR, controls with a lower HUI at the previous visit miss more visits; under MCAR the share is flat.
 
 ```{r}
-prev_hui=fu(pop %>% arrange(id,timen) %>% group_by(id) %>% mutate(prev=lag(hui_linear_trt)) %>% ungroup()) %>%
+prev_hui=fu(pop %>% arrange(id,timen) %>% group_by(id) %>% mutate(prev=lag(hui_trt)) %>% ungroup()) %>%
   filter(trt_overall==0) %>%
   mutate(group=cut(prev,quantile(prev,0:5/5,na.rm=TRUE),include.lowest=TRUE,labels=paste("Q",1:5)))
 check=bind_rows(lapply(list(MCAR=mcar,MAR=mar),function(d){
@@ -137,7 +137,7 @@ bind_rows(pop %>% mutate(data="all visits"),
           mcar %>% mutate(data="MCAR"),
           mar %>% mutate(data="MAR")) %>%
   filter(id %in% ids,timen<=2) %>%
-  ggplot(aes(x=timen,y=hui_linear_trt,group=id,colour=factor(id)))+
+  ggplot(aes(x=timen,y=hui_trt,group=id,colour=factor(id)))+
   geom_point()+geom_line()+
   facet_wrap(~factor(data,levels=c("all visits","MCAR","MAR")))+
   guides(colour="none")+

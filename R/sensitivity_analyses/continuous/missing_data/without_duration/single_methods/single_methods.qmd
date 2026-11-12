@@ -32,7 +32,7 @@ Population with missing visits for the historical controls, created once in `dgm
 mechanism="mcar"
 df=readRDS(paste0("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\sensitivity_analysis\\missing_data\\without duration\\population_diff_0.15_",mechanism,".rds")) %>% 
   filter(timen<=2) %>% 
-  select(id,timen,trt_overall,trt,aoo,sex,hui_linear_trt,yoo) %>% 
+  select(id,timen,trt_overall,trt,aoo,sex,hui_trt,yoo) %>% 
   group_by(id,trt) %>% 
   filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9)))) %>% 
   ungroup()
@@ -68,7 +68,7 @@ Plot all seventy patients
 trialdf %>% 
   #filter(cluster == 3) %>% 
   filter(timen<=2) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
+  ggplot(.,aes(x=timen,y=hui_trt,col=factor(trt),group = id))+
   geom_point()+
   geom_line()+
   guides(col='none')+
@@ -83,10 +83,10 @@ Raw model
 # model
 trial=trialdf %>% 
   group_by(id) %>% 
-  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  mutate(hui_baseline=first(hui_trt)) %>% 
   filter(row_number()!=1) %>% 
   ungroup() %>% 
-  lmer(hui_linear_trt~(1|id)+hui_baseline+trt*timen+yoo,.)
+  lmer(hui_trt~(1|id)+hui_baseline+trt*timen+yoo,.)
 # marginalize
 estimand=emmeans(trial, ~ trt | timen,
                               at = list(timen=2),
@@ -120,7 +120,7 @@ trialdf_matched=inner_join(trialdf, matches, by = "id")
 trialdf_analysis=trialdf_matched %>%
   arrange(id, timen) %>% 
   group_by(id) %>% 
-  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  mutate(hui_baseline=first(hui_trt)) %>% 
   filter(row_number()!=1) %>% 
   ungroup()
 ```
@@ -151,7 +151,7 @@ Run model and marginalize
 ```{r}
 # model
 trial=trialdf_analysis %>% 
-  lmer(hui_linear_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
+  lmer(hui_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
 # marginalize
 estimand=emmeans(trial, ~ trt | timen,
                               at = list(timen=2),
@@ -169,7 +169,7 @@ table(trialdf_matched$trt_overall)
 trialdf_analysis %>% 
   #filter(cluster == 3) %>% 
   #filter(timen<=2) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
+  ggplot(.,aes(x=timen,y=hui_trt,col=factor(trt),group = id))+
   geom_point()+
   geom_line()+
   guides(col='none')+
@@ -180,7 +180,7 @@ trialdf_analysis %>%
 trialdf_matched %>% 
   #filter(cluster == 3) %>% 
   #filter(timen<=2) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt),group = id))+
+  ggplot(.,aes(x=timen,y=hui_trt,col=factor(trt),group = id))+
   geom_point()+
   geom_line()+
   guides(col='none')+
@@ -217,7 +217,7 @@ trialdf_matched = inner_join(trialdf, matches, by = "id")
 trialdf_analysis=trialdf_matched %>%
   arrange(id, timen) %>% 
   group_by(id) %>% 
-  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  mutate(hui_baseline=first(hui_trt)) %>% 
   filter(row_number()!=1) %>% 
   ungroup()
 ```
@@ -254,7 +254,7 @@ table(trialdf_matched$trt_overall)
 trialdf_matched %>% 
   #filter(cluster %in% clusters) %>% 
   #filter(timen<=2) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt_overall),group = id))+
+  ggplot(.,aes(x=timen,y=hui_trt,col=factor(trt_overall),group = id))+
   geom_point()+
   geom_line()+
   guides(col='none')+
@@ -265,7 +265,7 @@ trialdf_matched %>%
 trialdf_analysis %>% 
   #filter(cluster %in% clusters) %>% 
   #filter(timen<=2) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt_overall),group = id))+
+  ggplot(.,aes(x=timen,y=hui_trt,col=factor(trt_overall),group = id))+
   geom_point()+
   geom_line()+
   guides(col='none')+
@@ -279,7 +279,7 @@ Run model and marginalize
 ```{r}
 # model
 trial=trialdf_analysis %>% 
-  lmer(hui_linear_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
+  lmer(hui_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
 # marginalize
 estimand=emmeans(trial, ~ trt | timen,
                               at = list(timen=2),
@@ -314,7 +314,7 @@ trialdf_matched = inner_join(trialdf, matches, by = "id")
 trialdf_analysis=trialdf_matched %>%
   arrange(id, timen) %>% 
   group_by(id) %>% 
-  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  mutate(hui_baseline=first(hui_trt)) %>% 
   filter(row_number()!=1) %>% 
   ungroup()
 ```
@@ -324,7 +324,7 @@ Run model and marginalize
 ```{r}
 # model
 trial=trialdf_analysis %>% 
-  lmer(hui_linear_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
+  lmer(hui_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*timen+yoo,.)
 # marginalize
 estimand=emmeans(trial, ~ trt | timen,
                               at = list(timen=2),
@@ -344,7 +344,7 @@ table(trialdf_matched$trt_overall)
 trialdf_matched %>% 
   #filter(cluster %in% clusters) %>% 
   #filter(timen<=2) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt_overall),group = id))+
+  ggplot(.,aes(x=timen,y=hui_trt,col=factor(trt_overall),group = id))+
   geom_point()+
   geom_line()+
   guides(col='none')+
@@ -355,7 +355,7 @@ trialdf_matched %>%
 trialdf_analysis %>% 
   #filter(cluster %in% clusters) %>% 
   #filter(timen<=2) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_trt,col=factor(trt_overall),group = id))+
+  ggplot(.,aes(x=timen,y=hui_trt,col=factor(trt_overall),group = id))+
   geom_point()+
   geom_line()+
   guides(col='none')+
@@ -386,11 +386,11 @@ Model
 options(scipen=999)
 fit=trialdfw %>% 
   group_by(id) %>% 
-  mutate(hui_baseline=first(hui_linear_trt)) %>% 
+  mutate(hui_baseline=first(hui_trt)) %>% 
   filter(row_number()!=1) %>% 
   ungroup() %>% 
   filter(timen<=2) %>% 
-  lmer(hui_linear_trt~(1|id)+hui_baseline+trt_overall*timen+yoo,weights = w,data=.)
+  lmer(hui_trt~(1|id)+hui_baseline+trt_overall*timen+yoo,weights = w,data=.)
 ```
 
 Predict
@@ -410,7 +410,7 @@ ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 ```{r}
 ate=gcomp(trialdf %>% 
             group_by(id) %>% 
-            mutate(hui_baseline=first(hui_linear_trt)) %>% 
+            mutate(hui_baseline=first(hui_trt)) %>% 
             filter(row_number()!=1) %>% 
             ungroup() %>% 
             filter(timen<=2),
@@ -418,7 +418,7 @@ ate=gcomp(trialdf %>%
           estimand="ATT",
           treatment="trt_overall",
           time="timen",
-          formula=hui_linear_trt~(1|id)+hui_baseline+trt_overall*timen+aoo+sex+yoo,
+          formula=hui_trt~(1|id)+hui_baseline+trt_overall*timen+aoo+sex+yoo,
           landmark=2)[1]
 ```
 

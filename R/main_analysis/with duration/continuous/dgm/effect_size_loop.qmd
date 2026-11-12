@@ -122,7 +122,7 @@ df_sim=df_sim %>%
 df_sim=df_sim %>% 
   mutate(timen=as.numeric(date-dateonset)/365.25,
          timen_trt=ifelse(trt==0,0,as.numeric(date-starttrial)/365.25),
-         hui_linear_untrt=(b0+u0)+0.0093*aoo-0.0430*(sex=="male")+0.005*yoo_c-0.1*timen+epsilon) %>% 
+         hui_untrt=(b0+u0)+0.0093*aoo-0.0430*(sex=="male")+0.005*yoo_c-0.1*timen+epsilon) %>% 
   group_by(id,trt) %>% 
   filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9)))) %>% 
   ungroup()
@@ -136,7 +136,7 @@ targets=c(0,0.025,0.075,0.15)
 folder=paste0(base,"Data\\paper\\main_analysis\\with duration\\continuous\\population_diff_")
 for (i in 1:length(targets)){
   # treatment effect accrues with time on treatment (timen_trt = 0 at trial entry)
-  out=df_sim %>% mutate(hui_linear_trt=hui_linear_untrt+0*trt+targets[i]*trt*timen_trt)
+  out=df_sim %>% mutate(hui_trt=hui_untrt+0*trt+targets[i]*trt*timen_trt)
   saveRDS(out, paste(folder,targets[i]*2,".rds",sep=""))
 }
 ```

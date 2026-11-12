@@ -134,7 +134,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods){
   trialdf_matched %>%
     group_by(!!id_enquo) %>%
     arrange(!!enquo(time_var)) %>% 
-    mutate(hui_baseline = first(hui_linear_trt)) %>%
+    mutate(hui_baseline = first(hui_trt)) %>%
     filter(row_number()!=1) %>% 
     ungroup()
 }

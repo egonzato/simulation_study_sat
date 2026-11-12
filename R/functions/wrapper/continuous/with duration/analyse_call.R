@@ -3,16 +3,16 @@ analyse_call=function(data,landmark=2,methods){
   ## iptw
   if (grepl("iptw",methods)){
     # linear mixed model
-    fit=suppressMessages(lmer(hui_linear_trt~(1|id)+hui_baseline+trt*timen+yoo,data=data,weights=w))
+    fit=suppressMessages(lmer(hui_trt~(1|id)+hui_baseline+trt*timen+yoo,data=data,weights=w))
   } else if (methods=="raw"){
     # linear mixed model
-    fit=suppressMessages(lmer(hui_linear_trt~(1|id)+hui_baseline+trt*timen+yoo,data=data))
+    fit=suppressMessages(lmer(hui_trt~(1|id)+hui_baseline+trt*timen+yoo,data=data))
   } else if (methods=="gcomp"){
     # linear mixed model
-    fit=suppressMessages(lmer(hui_linear_trt~(1|id)+hui_baseline+trt*timen+yoo+aoo+sex,data=data))
+    fit=suppressMessages(lmer(hui_trt~(1|id)+hui_baseline+trt*timen+yoo+aoo+sex,data=data))
   } else {
     # enter (duration at alignment) is needed next to yoo: among the treated yoo tracks the duration almost exactly
-    fit=suppressMessages(lmer(hui_linear_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*time_aligned+yoo+enter,data=data))
+    fit=suppressMessages(lmer(hui_trt~(1|cluster)+(1|cluster:id)+hui_baseline+trt*time_aligned+yoo+enter,data=data))
     }
   # marginalize
   marginal=emmeans(fit, ~ trt | time_aligned,

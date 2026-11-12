@@ -5,14 +5,14 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
   id_enquo=enquo(id)
   # branch based on methods
     if (methods=="duration_matching"){
-      matched=rlang::inject(duration_matching_interpolation(data=data,treatment=trt_overall,identifier=id,y=hui_linear_trt,
+      matched=rlang::inject(duration_matching_interpolation(data=data,treatment=trt_overall,identifier=id,y=hui_trt,
                                                             duration=!!duration_var,time=!!time_var,ratio=ratio,
                                                             replacement=F,history=F,warning=F))
       if (interpolation==T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -21,7 +21,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
       }
     }  else if (methods=="exact_greedy"){
       matched=rlang::inject(matching_interpolation(data=data,treatment=trt_overall,ageofonset=aoo,sex=sex,
-                                                   identifier=id,y=hui_linear_trt,
+                                                   identifier=id,y=hui_trt,
                                                    duration=!!duration_var,time=!!time_var,method='greedy',
                                                    caliper=0.5,step=0.1,maxcaliper=0.5,ratio=ratio,
                                                    replacement=F,history=F,warning=F))
@@ -29,7 +29,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -38,7 +38,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
       }
     }  else if (methods=="exact_optimal"){
       matched=rlang::inject(matching_interpolation(data=data,treatment=trt_overall,ageofonset=aoo,sex=sex,
-                                                   identifier=id,y=hui_linear_trt,
+                                                   identifier=id,y=hui_trt,
                                                    duration=!!duration_var,time=!!time_var,method='optimal',
                                                    caliper=NULL,step=NULL,maxcaliper=NULL,ratio=ratio,
                                                    replacement=F,history=F,warning=F))
@@ -46,7 +46,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -58,7 +58,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
                                          formula=trt_overall~aoo+sex,
                                          ratio=ratio,
                                          identifier=id,
-                                         outcome=hui_linear_trt,
+                                         outcome=hui_trt,
                                          replacement=F,
                                          distance='glm',
                                          method='greedy',
@@ -70,7 +70,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -82,7 +82,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
                                          formula=trt_overall~aoo+sex,
                                          ratio=ratio,
                                          identifier=id,
-                                         outcome=hui_linear_trt,
+                                         outcome=hui_trt,
                                          replacement=F,
                                          distance='glm',
                                          method='greedy',
@@ -94,7 +94,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -106,7 +106,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
                                          formula=trt_overall~aoo+sex,
                                          ratio=ratio,
                                          identifier=id,
-                                         outcome=hui_linear_trt,
+                                         outcome=hui_trt,
                                          replacement=F,
                                          distance='glm',
                                          method='greedy',
@@ -118,7 +118,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -130,7 +130,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
                                          formula=trt_overall~aoo+sex,
                                          ratio=ratio,
                                          identifier=id,
-                                         outcome=hui_linear_trt,
+                                         outcome=hui_trt,
                                          replacement=F,
                                          distance='mahalanobis',
                                          method='greedy',
@@ -142,7 +142,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -154,7 +154,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
                                          formula=trt_overall~aoo+sex,
                                          ratio=ratio,
                                          identifier=id,
-                                         outcome=hui_linear_trt,
+                                         outcome=hui_trt,
                                          replacement=F,
                                          distance='mahalanobis',
                                          method='greedy',
@@ -166,7 +166,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -178,7 +178,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
                                          formula=trt_overall~aoo+sex,
                                          ratio=ratio,
                                          identifier=id,
-                                         outcome=hui_linear_trt,
+                                         outcome=hui_trt,
                                          replacement=F,
                                          distance='mahalanobis',
                                          method='greedy',
@@ -190,7 +190,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -202,7 +202,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
                                          formula=trt_overall~aoo+sex,
                                          ratio=ratio,
                                          identifier=id,
-                                         outcome=hui_linear_trt,
+                                         outcome=hui_trt,
                                          replacement=F,
                                          distance='glm',
                                          method='optimal',
@@ -214,7 +214,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -226,7 +226,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
                                          formula=trt_overall~aoo+sex,
                                          ratio=ratio,
                                          identifier=id,
-                                         outcome=hui_linear_trt,
+                                         outcome=hui_trt,
                                          replacement=F,
                                          distance='mahalanobis',
                                          method='optimal',
@@ -238,7 +238,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
         # extract dataset
         trialdf_matched=matched$interpolated %>% 
           filter(time_aligned<=2) %>% 
-          mutate(hui_linear_trt=y) %>% 
+          mutate(hui_trt=y) %>% 
           select(-y)
       } else {
         # extract dataset
@@ -250,7 +250,7 @@ matching_call=function(data=NULL,id=NULL,ratio,methods,interpolation=T){
   trialdf_matched %>% 
     group_by(!!id_enquo) %>% 
     arrange(!!enquo(time_var)) %>% 
-    mutate(hui_baseline = first(hui_linear_trt)) %>%
+    mutate(hui_baseline = first(hui_trt)) %>%
     filter(row_number()!=1) %>% 
     ungroup()
 }

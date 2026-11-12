@@ -19,7 +19,7 @@ pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,smd,WeightIt,lme4,
 # missingness mechanism: "mcar" or "mar" (populations created in dgm/missingness.qmd)
 mechanism="mcar"
 df=readRDS(paste0("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\sensitivity_analysis\\missing_data\\with duration\\population_diff_0.15_",mechanism,".rds")) %>% 
-  select(id,timen,trt,trt_overall,duration,aoo,sex,hui_linear_trt,yoo)
+  select(id,timen,trt,trt_overall,duration,aoo,sex,hui_trt,yoo)
 # n rows
 nrow(df)
 ```
