@@ -1,20 +1,10 @@
----
-title: "confounding"
-format: html
-editor: visual
----
-
-# Libraries
-
-```{r}
+## -------------------------------------------------------------------------------------------------------
 pacman::p_load(dplyr,ggplot2,lubridate,ipw,emmeans,marginaleffects,
                lpSolve,randomForest,
                optmatch,lme4,lmerTest,ggdag,RColorBrewer,MatchIt,lubridate)
-```
 
-# Function
 
-```{r}
+## -------------------------------------------------------------------------------------------------------
 function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\without duration",
                 "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
                 "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
@@ -24,13 +14,9 @@ sapply(files, source)
 }
 # other function for looping 
 expit=function(x) 1/(1+exp(-x))
-```
 
-# Simulation scenario
 
-## Dates
-
-```{r}
+## -------------------------------------------------------------------------------------------------------
 set.seed(3111963)
 # define N
 n=1e4
@@ -50,22 +36,18 @@ hist(as.numeric(onsetdatev),
      main = "Time before end date",
      xlab = "Date of onset (numeric)")
 abline(v=as.numeric(as.Date('2021-05-31')),col="red",lty=2,lwd=2)
-```
 
-### Covariates
 
-```{r}
+## -------------------------------------------------------------------------------------------------------
 covs=data.frame(id=1:n,
                 dateonset=onsetdatev,
               aoo=runif(n,0,8),
               event=1,
               u0=rnorm(n,0,0.5),
               sex=sample(c('male','female'),n,replace=T))
-```
 
-Expand with time
 
-```{r}
+## -------------------------------------------------------------------------------------------------------
 set.seed(181299)
 t=seq(0,365.25*10,by=182.625)
 id=1:n
@@ -79,11 +61,9 @@ df=merge(covs,tid,by='id') %>%
          yoo=year(dateonset),
          eps=rnorm(n(),0,0.3),
          yoo_c=yoo-mean(yoo))
-```
 
-### Simulate outcome
 
-```{r}
+## -------------------------------------------------------------------------------------------------------
 df_sim=df %>% 
     group_by(id) %>% 
     mutate(trialdate=as.Date("2021-05-31"),
@@ -111,11 +91,9 @@ df_sim=df_sim %>%
   group_by(id) %>% 
   mutate(date=if_else(trt==1, starttrial+90*(cumsum(trt)-1), date)) %>% 
   ungroup()
-```
 
-Loop through effect sizes
 
-```{r}
+## -------------------------------------------------------------------------------------------------------
 # set seed for missing data
 set.seed(181299)
 # targets
@@ -134,15 +112,13 @@ df_sim=df_sim %>%
          hui_untrt=-0.36+(1+0.36)*expit(eta0+eps),
          hui_trt=-0.36+(1+0.36)*expit(eta0+gammas[i]*trt*timen+eps))
   # define dataset
-  path=paste(folder,targets[i]*2,".rds",sep="")
+  path=paste(folder,gammas[i]*2,".rds",sep="")
   # save dataset
   saveRDS(df_sim,
           path)
 }
-```
 
-Purl
 
-```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\logistic\\effect_size_loop_logistic.qmd")
-```
+## -------------------------------------------------------------------------------------------------------
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\non_linear_decay\\without_duration\\dgm\\logistic\\effect_size_loop_logistic.qmd")
+

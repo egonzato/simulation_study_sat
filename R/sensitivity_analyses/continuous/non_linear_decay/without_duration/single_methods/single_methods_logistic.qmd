@@ -26,7 +26,7 @@ sapply(files, source)
 # Load dataset
 
 ```{r,warning=FALSE}
-df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\continuous\\population_diff_0.15.rds") %>% 
+df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\continuous\\population_logistic_diff_0.15.rds") %>% 
   filter(timen<=2) %>% 
   select(id,timen,trt_overall,trt,aoo,sex,hui_trt,yoo) %>% 
   group_by(id,trt) %>% 
@@ -421,5 +421,5 @@ ate=gcomp(trialdf %>%
 # purl
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\single_methods\\single_methods.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\non_linear_decay\\without_duration\\single_methods\\single_methods_logistic.qmd")
 ```

@@ -1,8 +1,38 @@
-## -------------------------------------------------------------------------------------------------------
+---
+title: "Non-linear (logistic) decline of the HUI"
+format: html
+editor: visual
+---
+
+Definition of the outcome model for the sensitivity analysis with a non-linear, bounded HUI. This file only defines the model and shows it; the parameters used to generate the populations (treatment model, confounding, drift, treatment effects) are found in `tune_logistic.qmd`.
+
+# Model
+
+For patient $i$ at visit $j$, with $t_{ij}$ the years since onset and $t^{trt}_{ij}$ the years since the start of treatment (0 for untreated visits), the model is built on a latent scale and then transformed to the range of the HUI:
+
+$$
+\eta_{ij} = a_0 + u_{0i} + \beta_{aoo}\,(aoo_i-\overline{aoo}) + \beta_{male}\,(male_i-\overline{male}) + \beta_{yoo}\,yoo^c_i - k\,t_{ij} + \gamma\,trt_{ij}\,t^{trt}_{ij} + \varepsilon_{ij}
+$$
+
+$$
+HUI_{ij} = L + (U-L)\,\text{expit}(\eta_{ij}), \qquad \text{expit}(x)=\frac{1}{1+e^{-x}}, \qquad L=-0.36,\; U=1
+$$
+
+-   **Bounds**: expit is always between 0 and 1, so the HUI is always between $L=-0.36$ (the lowest HUI multiscore) and $U=1$ (perfect health), including the measurement error $\varepsilon_{ij}$, which is added on the latent scale. Close to the bounds the noise is compressed, as for the real HUI.
+-   **Shape**: a linear decline on the latent scale ($-k\,t$) is a logistic (sigmoid) decline of the HUI: close to the ceiling at first, steepest in the middle, flattening towards the floor. Covariates and the random intercept $u_{0i}$ move a patient along the curve.
+-   **Treatment**: $\gamma\,t^{trt}$ is a slower progression of the disease. With $\delta=\gamma/k$, the treated progress at a fraction $1-\delta$ of the untreated speed ($\delta=1$: the decline stops). On the HUI scale the effect is non-linear in time and differs between patients, depending on where they are on the curve.
+-   **Centred covariates**: $a_0$ is the latent value of an average patient at onset, whatever the covariate effects found in the tuning.
+-   **True effect**: because the effect on the HUI depends on the position on the curve, $\gamma$ is not the effect at 2 years; the true effect is computed from the potential outcomes and $\gamma$ is calibrated in `tune_logistic.qmd`.
+
+# Libraries
+
+```{r}
 pacman::p_load(dplyr,tidyr,ggplot2,lubridate)
+```
 
+# Functions and parameters
 
-## -------------------------------------------------------------------------------------------------------
+```{r}
 expit=function(x) 1/(1+exp(-x))
 logit=function(p) log(p/(1-p))
 # bounds of the HUI multiscore
@@ -19,9 +49,13 @@ sd_u0=0.5; sd_eps=0.3
 # illustrative covariate effects and treatment effect (latent scale); the final values come from tune_logistic.qmd
 b_aoo=0.05; b_male=-0.2; b_yoo=0.02; gamma=0.3
 round(c(a0=a0,k=k,delta=gamma/k),3)
+```
 
+# Average curve
 
-## -------------------------------------------------------------------------------------------------------
+Average patient, without random intercept and measurement error, against the linear HUI of the main analysis ($0.95-0.1\,t$).
+
+```{r}
 tibble(t=seq(0,10,by=0.05)) %>%
   mutate(`logistic (sensitivity)`=hui(a0-k*t),
          `linear (main)`=0.95-0.1*t) %>%
@@ -31,9 +65,13 @@ tibble(t=seq(0,10,by=0.05)) %>%
   geom_line(linewidth=1)+
   labs(x="Years since onset",y="HUI",colour=NULL)+
   theme_bw()+theme(legend.position="bottom")
+```
 
+# Simulated patients
 
-## -------------------------------------------------------------------------------------------------------
+Covariates and visits as in the main DGM (onset dates between 2005 and 2022, visits every 6 months with up to 90 days of delay, 10 years of follow-up).
+
+```{r}
 source_dir="C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\without duration\\"
 source(paste0(source_dir,"rtruncexp.R"))
 set.seed(3111963)
@@ -53,9 +91,11 @@ visits=covs %>%
          eta0=a0+u0+b_aoo*(aoo-mean(covs$aoo))+b_male*((sex=="male")-mean(covs$sex=="male"))+b_yoo*yoo_c-k*timen,
          eps=rnorm(n(),0,sd_eps),
          hui_untrt=hui(eta0+eps))
+```
 
+Fifteen random patients, untreated.
 
-## -------------------------------------------------------------------------------------------------------
+```{r}
 set.seed(181299)
 ids=sample(covs$id,15)
 visits %>% filter(id %in% ids) %>%
@@ -65,18 +105,24 @@ visits %>% filter(id %in% ids) %>%
   guides(colour="none")+
   labs(x="Years since onset",y="HUI (untreated)")+
   theme_bw()
+```
 
+Share of visits close to the bounds, over time: the model should leave room above the ceiling at onset and not put most patients on the floor within the first years.
 
-## -------------------------------------------------------------------------------------------------------
+```{r}
 visits %>%
   mutate(years=cut(timen,c(0,1,2,4,6,8,Inf),right=FALSE,labels=c("0-1","1-2","2-4","4-6","6-8","8+"))) %>%
   group_by(years) %>%
   summarise(mean_HUI=round(mean(hui_untrt),2),
             near_ceiling=round(mean(hui_untrt>0.95),3),
             near_floor=round(mean(hui_untrt< -0.3),3),.groups="drop")
+```
 
+# Treatment effect
 
-## -------------------------------------------------------------------------------------------------------
+The same fifteen patients, as if treated from onset (anchored branch: treatment starts at onset), with the illustrative $\gamma$. Dashed: untreated; solid: treated. Same measurement error in both.
+
+```{r}
 visits %>% filter(id %in% ids) %>%
   mutate(hui_trt=hui(eta0+gamma*timen+eps)) %>%
   pivot_longer(c(hui_untrt,hui_trt),names_to="arm",values_to="HUI") %>%
@@ -88,9 +134,11 @@ visits %>% filter(id %in% ids) %>%
   guides(colour="none")+
   labs(x="Years since start of treatment (= onset)",y="HUI",linetype=NULL)+
   theme_bw()+theme(legend.position="bottom")
+```
 
+The effect on the HUI scale at 2 years depends on where the patient is on the curve: the same $\gamma$ gives a small effect close to the ceiling or the floor and a large effect in the middle.
 
-## -------------------------------------------------------------------------------------------------------
+```{r}
 visits %>% filter(timen>=1.9,timen<=2.1) %>%
   mutate(hui_trt=hui(eta0+gamma*timen+eps),effect=hui_trt-hui_untrt) %>%
   ggplot(aes(x=hui_untrt,y=effect))+
@@ -98,8 +146,10 @@ visits %>% filter(timen>=1.9,timen<=2.1) %>%
   labs(x="Untreated HUI at 2 years",y="Treated - untreated HUI at 2 years",
        title=paste0("Effect at 2 years for gamma = ",gamma))+
   theme_bw()
+```
 
+# knitr
 
-## -------------------------------------------------------------------------------------------------------
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\logistic\\shape_logistic.qmd")
-
+```{r}
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\non_linear_decay\\without_duration\\dgm\\logistic\\shape_logistic.qmd")
+```
