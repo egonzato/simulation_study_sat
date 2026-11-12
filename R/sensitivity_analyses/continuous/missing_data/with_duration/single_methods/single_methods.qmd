@@ -25,16 +25,12 @@ sapply(files, source)
 
 # Load dataset
 
+Population with missing visits for the historical controls, created once in `dgm/missingness.qmd` (checks and plots of the missing visits are there). Treated participants with too few visits and controls with too few pre-trial visits are already excluded by the main DGM; controls are not filtered again after removing visits, as in the analysis file.
+
 ```{r,warning=FALSE}
-df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\with duration\\continuous\\population_diff_0.15.rds") 
-#df=readxl::read_xlsx("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\population_hui_like_dur.xlsx")
-# keep only treated participants with enough visits
-df=df %>% 
-  group_by(id) %>% 
-  mutate(flag_trt=ifelse(trt_overall==1 & sum(trt)<5,1,0),
-         flag_untrt=ifelse(trt_overall==0 & max(row_number())<5,1,0)) %>% 
-  ungroup() %>% 
-  filter(flag_untrt==0 & flag_trt==0)
+# missingness mechanism: "mcar" or "mar"
+mechanism="mcar"
+df=readRDS(paste0("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\sensitivity_analysis\\missing_data\\with duration\\population_diff_0.15_",mechanism,".rds"))
 ```
 
 # Single calls
@@ -341,5 +337,5 @@ ate=summary(contrast(estimand, method="trt.vs.ctrl", ref=1))$estimate[1]
 # purl
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\with duration\\continuous\\single_methods\\single_methods.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\missing_data\\with_duration\\single_methods\\single_methods.qmd")
 ```

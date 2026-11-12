@@ -16,7 +16,9 @@ pacman::p_load(readxl,dplyr,tidyverse,optmatch,lpSolve,smd,WeightIt,lme4,
 # Load dataset
 
 ```{r}
-df=readRDS("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\with duration\\continuous\\population_diff_0.15.rds") %>% 
+# missingness mechanism: "mcar" or "mar" (populations created in dgm/missingness.qmd)
+mechanism="mcar"
+df=readRDS(paste0("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\sensitivity_analysis\\missing_data\\with duration\\population_diff_0.15_",mechanism,".rds")) %>% 
   select(id,timen,trt,trt_overall,duration,aoo,sex,hui_linear_trt,yoo)
 # n rows
 nrow(df)
@@ -166,11 +168,11 @@ elapsed; elapsed["elapsed"]
 Save data
 
 ```{r}
-saveRDS(results,"C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\with duration\\continuous\\results_diff_0.15.rds")
+saveRDS(results,paste0("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\sensitivity_analysis\\missing_data\\with duration\\results_diff_0.15_",mechanism,".rds"))
 ```
 
 # knitr
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\with duration\\continuous\\analysis\\analysis_diff_0.15.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\missing_data\\with_duration\\analysis\\analysis_diff_0.15.qmd")
 ```
