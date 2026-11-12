@@ -1,0 +1,147 @@
+---
+title: "Tuning of the logistic (non-linear) DGM"
+format: html
+editor: visual
+---
+
+Parameters of the non-linear DGM defined in `shape_logistic.qmd`, chosen so that the populations have the same properties as in the linear branch:
+
+1.  **treatment model**: SMDs of 0.5 for age of onset and sex between treated and historical controls (as in `tune.qmd`; the treatment model does not depend on the HUI, so these values are the same as in the linear branch);
+2.  **drift**: year of onset changes the HUI by about 0.005 per year, as in the linear DGM;
+3.  **confounding**: the difference in untreated HUI at 2 years between treated and controls due to age of onset and sex is $-0.02$, the target of the linear tuning ($-0.20\times0.10$), half from each covariate;
+4.  **treatment effects**: the true effect on the HUI scale at 2 years among the treated (treated minus untreated HUI) is 0, 0.05, 0.15 and 0.30, as in the linear branch.
+
+The steps are done in this order because each depends on the previous one: on a bounded scale the same latent coefficient gives a different effect depending on where patients are on the curve. Everything is computed at the patient level at the landmark (2 years after onset = 2 years after the start of treatment in the anchored branch), on a large population.
+
+# Libraries
+
+```{r}
+pacman::p_load(dplyr,lubridate)
+```
+
+# Settings
+
+```{r}
+source("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\without duration\\rtruncexp.R")
+# shape, as chosen in shape_logistic.qmd
+expit=function(x) 1/(1+exp(-x)); logit=function(p) log(p/(1-p))
+L=-0.36; U=1
+hui=function(eta) L+(U-L)*expit(eta)
+eta_of=function(h) logit((h-L)/(U-L))
+hui_onset=0.85; hui_ref=0; t_ref=5
+a0=eta_of(hui_onset)
+k=(eta_of(hui_onset)-eta_of(hui_ref))/t_ref
+sd_u0=0.5; sd_eps=0.3
+# targets, as in the linear branch
+target_smd_age=0.5; target_smd_sex=0.5; t_int=-1
+target_bias=-0.20*0.10; share_age=0.5
+drift_hui=0.005
+targets=c(0,0.025,0.075,0.15)*2     # true effects at the landmark: 0, 0.05, 0.15, 0.30
+landmark=2
+trialdate=as.Date("2021-05-31")
+n=1e6
+```
+
+# Population
+
+Patients at onset, with the covariates of the main DGM, the random intercept and the measurement error at the landmark visit.
+
+```{r}
+set.seed(3111963)
+end_date=as.Date("2022-12-31")
+pop=tibble(dateonset=end_date-floor(rtruncexp(n=n,rate=0.0002,max=as.numeric(end_date-as.Date("2005-01-01")))),
+           aoo=runif(n,0,8),
+           male=as.integer(runif(n)<0.5),
+           u=runif(n),
+           u0=rnorm(n,0,sd_u0),
+           eps=rnorm(n,0,sd_eps)) %>%
+  mutate(yoo=year(dateonset),
+         yoo_c=yoo-mean(yoo),
+         post=dateonset>=trialdate)
+smd_abs=function(x,g) abs((mean(x[g==1])-mean(x[g==0]))/sqrt((var(x[g==1])+var(x[g==0]))/2))
+```
+
+# 1. Treatment model: SMDs
+
+Treated: onset after the trial date and treated according to the treatment model; historical controls: onset before the trial date (untreated patients with onset after the trial date are excluded).
+
+```{r}
+select_trt=function(d,t_age,t_sex){
+  d %>% mutate(trt=as.integer(u<plogis(t_int-t_age*aoo+t_sex*male) & post)) %>%
+    filter(trt==1 | !post)
+}
+obj=function(par){
+  d=select_trt(pop,par[1],par[2])
+  (smd_abs(d$aoo,d$trt)-target_smd_age)^2+(smd_abs(d$male,d$trt)-target_smd_sex)^2
+}
+o=optim(c(0.3,1.4),obj,method="Nelder-Mead",control=list(reltol=1e-10))
+t_age=o$par[1]; t_sex=o$par[2]
+d=select_trt(pop,t_age,t_sex)
+c(t_int=t_int,t_age=t_age,t_sex=t_sex,smd_age=smd_abs(d$aoo,d$trt),smd_sex=smd_abs(d$male,d$trt),
+  treated=sum(d$trt),controls=sum(1-d$trt))
+```
+
+# 2. Drift
+
+The latent effect of year of onset that changes the HUI by about `drift_hui` per year at the landmark, on average: $\beta_{yoo}=$ `drift_hui` / mean of $dHUI/d\eta$.
+
+```{r}
+eta_landmark=function(d,b_aoo,b_male,b_yoo,gamma=0){
+  a0+d$u0+b_aoo*(d$aoo-mean(pop$aoo))+b_male*(d$male-mean(pop$male))+b_yoo*d$yoo_c-k*landmark+gamma*landmark*d$trt+d$eps
+}
+slope=function(eta) (U-L)*expit(eta)*(1-expit(eta))
+b_yoo=drift_hui/mean(slope(eta_landmark(d,0,0,0)))
+b_yoo
+```
+
+# 3. Confounding: covariate effects
+
+The covariate effects are scaled together by $s$: age of onset and sex each account for half of the latent difference between treated and controls ($\beta_{aoo}\,\Delta_{aoo}=\beta_{male}\,\Delta_{male}=s/2$). $s$ is found so that the difference in untreated HUI at the landmark due to these covariates (drift excluded, as in the linear tuning) equals `target_bias`.
+
+```{r}
+diff_aoo=mean(d$aoo[d$trt==1])-mean(d$aoo[d$trt==0])
+diff_male=mean(d$male[d$trt==1])-mean(d$male[d$trt==0])
+coefs=function(s) c(b_aoo=share_age*s/diff_aoo,b_male=(1-share_age)*s/diff_male)
+bias_hui=function(s){
+  b=coefs(s)
+  h0=hui(eta_landmark(d,b["b_aoo"],b["b_male"],0))
+  mean(h0[d$trt==1])-mean(h0[d$trt==0])
+}
+s=uniroot(function(s) bias_hui(s)-target_bias,c(-3,3),tol=1e-10)$root
+b=coefs(s)
+c(s=s,b,bias=bias_hui(s))
+```
+
+# 4. Treatment effects
+
+True effect at the landmark among the treated: mean of the treated minus the untreated HUI of the same patients (same random intercept and measurement error). $\gamma$ is found for every target; the largest effect that is possible on a bounded scale ($\gamma\to\infty$, every treated patient at the ceiling) is shown as a check.
+
+```{r}
+tr=d %>% filter(trt==1)
+h0=hui(eta_landmark(tr,b["b_aoo"],b["b_male"],b_yoo))
+effect=function(gamma) mean(hui(eta_landmark(tr,b["b_aoo"],b["b_male"],b_yoo,gamma))-h0)
+max_effect=mean(U-h0)
+gammas=sapply(targets,function(target) if (target==0) 0 else uniroot(function(g) effect(g)-target,c(0,20),tol=1e-10)$root)
+tibble(true_effect=targets,gamma=gammas,delta=gammas/k,check=sapply(gammas,effect))
+c(mean_untreated_hui_treated_at_landmark=mean(h0),max_possible_effect=max_effect)
+```
+
+# Parameters for the non-linear DGM
+
+To copy into the non-linear version of `effect_size_loop`.
+
+```{r}
+params=c(a0=a0,k=k,sd_u0=sd_u0,sd_eps=sd_eps,
+         t_int=t_int,t_age=t_age,t_sex=t_sex,
+         b_aoo=unname(b["b_aoo"]),b_male=unname(b["b_male"]),b_yoo=b_yoo,
+         setNames(gammas,paste0("gamma_",targets)))
+round(params,4)
+cat(paste0("aoo_mean=",round(mean(pop$aoo),4),"; male_mean=",round(mean(pop$male),4),
+           " # centring values used for the covariates\n"))
+```
+
+# knitr
+
+```{r}
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\tune_logistic.qmd")
+```

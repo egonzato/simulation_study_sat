@@ -1,355 +1,155 @@
 ---
-title: "confounding"
+title: "Non-linear (logistic) decline of the HUI"
 format: html
 editor: visual
 ---
 
-# libraries
+Definition of the outcome model for the sensitivity analysis with a non-linear, bounded HUI. This file only defines the model and shows it; the parameters used to generate the populations (treatment model, confounding, drift, treatment effects) are found in `tune_logistic.qmd`.
+
+# Model
+
+For patient $i$ at visit $j$, with $t_{ij}$ the years since onset and $t^{trt}_{ij}$ the years since the start of treatment (0 for untreated visits), the model is built on a latent scale and then transformed to the range of the HUI:
+
+$$
+\eta_{ij} = a_0 + u_{0i} + \beta_{aoo}\,(aoo_i-\overline{aoo}) + \beta_{male}\,(male_i-\overline{male}) + \beta_{yoo}\,yoo^c_i - k\,t_{ij} + \gamma\,trt_{ij}\,t^{trt}_{ij} + \varepsilon_{ij}
+$$
+
+$$
+HUI_{ij} = L + (U-L)\,\text{expit}(\eta_{ij}), \qquad \text{expit}(x)=\frac{1}{1+e^{-x}}, \qquad L=-0.36,\; U=1
+$$
+
+-   **Bounds**: expit is always between 0 and 1, so the HUI is always between $L=-0.36$ (the lowest HUI multiscore) and $U=1$ (perfect health), including the measurement error $\varepsilon_{ij}$, which is added on the latent scale. Close to the bounds the noise is compressed, as for the real HUI.
+-   **Shape**: a linear decline on the latent scale ($-k\,t$) is a logistic (sigmoid) decline of the HUI: close to the ceiling at first, steepest in the middle, flattening towards the floor. Covariates and the random intercept $u_{0i}$ move a patient along the curve.
+-   **Treatment**: $\gamma\,t^{trt}$ is a slower progression of the disease. With $\delta=\gamma/k$, the treated progress at a fraction $1-\delta$ of the untreated speed ($\delta=1$: the decline stops). On the HUI scale the effect is non-linear in time and differs between patients, depending on where they are on the curve.
+-   **Centred covariates**: $a_0$ is the latent value of an average patient at onset, whatever the covariate effects found in the tuning.
+-   **True effect**: because the effect on the HUI depends on the position on the curve, $\gamma$ is not the effect at 2 years; the true effect is computed from the potential outcomes and $\gamma$ is calibrated in `tune_logistic.qmd`.
+
+# Libraries
 
 ```{r}
-pacman::p_load(dplyr,ggplot2,lubridate,ipw,emmeans,marginaleffects,
-               lpSolve,randomForest,smd,
-               optmatch,lme4,lmerTest,ggdag,RColorBrewer,MatchIt,lubridate)
+pacman::p_load(dplyr,tidyr,ggplot2,lubridate)
 ```
 
-# Source functions
+# Functions and parameters
 
 ```{r}
-function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\time_to_event",
-                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
-                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
-for (i in 1:length(function_dirs)){
-  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
-  sapply(files, source)
-}
+expit=function(x) 1/(1+exp(-x))
+logit=function(p) log(p/(1-p))
+# bounds of the HUI multiscore
+L=-0.36; U=1
+hui=function(eta) L+(U-L)*expit(eta)
+# latent value for a given HUI (to choose a0 and k from interpretable values)
+eta_of=function(h) logit((h-L)/(U-L))
+# shape: HUI of an average patient at onset and after `t_ref` years
+hui_onset=0.85; hui_ref=0; t_ref=5
+a0=eta_of(hui_onset)
+k=(eta_of(hui_onset)-eta_of(hui_ref))/t_ref
+# between-patient SD (random intercept) and measurement error, both on the latent scale
+sd_u0=0.5; sd_eps=0.3
+# illustrative covariate effects and treatment effect (latent scale); the final values come from tune_logistic.qmd
+b_aoo=0.05; b_male=-0.2; b_yoo=0.02; gamma=0.3
+round(c(a0=a0,k=k,delta=gamma/k),3)
 ```
 
-# DAG
+# Average curve
+
+Average patient, without random intercept and measurement error, against the linear HUI of the main analysis ($0.95-0.1\,t$).
 
 ```{r}
-# define coordinates in the space
-coord_dag=list(x = c(hui=3,aoo=0.8,yoo=3,t=3,sex=0.8,trt=1.5),
-               y = c(hui=0,aoo=1,yoo=1.5,t=-1,sex=0,trt=1.5))
-# define colors
-col=brewer.pal(1, 'Set1')
-red=col[1]
-blue=col[2]
-green=col[3]
-yellow=col[6]
-# relationship between vars
-model=dagify(hui~t+aoo+sex+yoo+trt,
-             aoo~sex,
-             trt~aoo+yoo+sex,
-             coords = coord_dag,
-             outcome='hui',
-             exposure='trt',
-             labels = c("aoo"="aoo", 
-                        "yoo"="yoo",
-                        "hui"="hui",
-                        "trt"="trt",
-                        "sex" = "sex",
-                        "t"="t")) %>% 
-  tidy_dagitty() %>%
-  mutate(Variable = case_when(name == 'trt' ~ 'Exposure',
-                              name == 'hui' ~ 'Outcome',
-                              T~ "Observed"))
-# plot DAG
-ggdag(model, text = T, text_size = 3, text_col = 'white', edge_type = "link_arc",node_size=12)+
-  #geom_dag_point(color = "grey", show.legend = T)+
- # ggdag_paths(model,shadow = T)+
-  geom_dag_point(aes(colour = Variable))+
-  geom_dag_label_repel(aes(label = label), nudge_x = 2,nudge_y = 5) +
-  scale_color_manual(values=c(blue,green,red,'grey'))+
-  theme_dag()+
-  guides(color = guide_legend(override.aes = list(size = 2)))
+tibble(t=seq(0,10,by=0.05)) %>%
+  mutate(`logistic (sensitivity)`=hui(a0-k*t),
+         `linear (main)`=0.95-0.1*t) %>%
+  pivot_longer(-t,names_to="model",values_to="HUI") %>%
+  ggplot(aes(x=t,y=HUI,colour=model))+
+  geom_hline(yintercept=c(L,U),linetype=2,colour="grey50")+
+  geom_line(linewidth=1)+
+  labs(x="Years since onset",y="HUI",colour=NULL)+
+  theme_bw()+theme(legend.position="bottom")
 ```
 
-# Simulate dates of onset
+# Simulated patients
+
+Covariates and visits as in the main DGM (onset dates between 2005 and 2022, visits every 6 months with up to 90 days of delay, 10 years of follow-up).
 
 ```{r}
+source_dir="C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\without duration\\"
+source(paste0(source_dir,"rtruncexp.R"))
 set.seed(3111963)
-# define N
-n=1e4
-# define start and end of registry
-start_date=as.Date("2005-01-01")
+n=300
 end_date=as.Date("2022-12-31")
-max_days=as.numeric(end_date - start_date)
-# simulate dates
-backward_days=rtruncexp(n=n,
-                        rate=0.0002,
-                        max=max_days)
-# calculate onset date
-onsetdatev=end_date-floor(backward_days)
-# see distribution
-hist(as.numeric(onsetdatev),
-     breaks = 100,
-     main = "Time before end date",
-     xlab = "Date of onset (numeric)")
-abline(v=as.numeric(as.Date('2021-05-31')),col="red",lty=2,lwd=2)
+covs=tibble(id=1:n,
+            dateonset=end_date-floor(rtruncexp(n=n,rate=0.0002,max=as.numeric(end_date-as.Date("2005-01-01")))),
+            aoo=runif(n,0,8),
+            sex=sample(c("male","female"),n,replace=TRUE),
+            u0=rnorm(n,0,sd_u0)) %>%
+  mutate(yoo=year(dateonset))
+visits=covs %>%
+  crossing(time=seq(0,365.25*10,by=182.625)) %>%
+  mutate(terr=ifelse(time==0,0,runif(n(),0,90)),
+         timen=(time+terr)/365.25,
+         yoo_c=yoo-mean(covs$yoo),
+         eta0=a0+u0+b_aoo*(aoo-mean(covs$aoo))+b_male*((sex=="male")-mean(covs$sex=="male"))+b_yoo*yoo_c-k*timen,
+         eps=rnorm(n(),0,sd_eps),
+         hui_untrt=hui(eta0+eps))
 ```
 
-# Simulation scenario
-
-### Covariates
-
-Here the confounding scenario is applied. Sex defines the age of onset, male have a lower mean, so a more severe disease. Year of onset also has an effect on the likelihood of receiving the treatment.
+Fifteen random patients, untreated.
 
 ```{r}
 set.seed(181299)
-covs=data.frame(id=1:n,
-              aoo=runif(n,0,8),
-              event=1,
-              u=runif(n,0,1),
-              dateonset=as.Date(onsetdatev),
-              e=rnorm(n,0.5,0.02),
-              sex=sample(c('male','female'),n,replace=T))
+ids=sample(covs$id,15)
+visits %>% filter(id %in% ids) %>%
+  ggplot(aes(x=timen,y=hui_untrt,group=id,colour=factor(id)))+
+  geom_hline(yintercept=c(L,U),linetype=2,colour="grey50")+
+  geom_point(size=0.8)+geom_line()+
+  guides(colour="none")+
+  labs(x="Years since onset",y="HUI (untreated)")+
+  theme_bw()
 ```
 
-Define time
+Share of visits close to the bounds, over time: the model should leave room above the ceiling at onset and not put most patients on the floor within the first years.
 
 ```{r}
-set.seed(181299)
-t=seq(0,2190,by=182.625)
-id=1:n
-# expand time
-tid=expand.grid(id=id,time=t)
-# merge with covariates
-df=merge(covs,tid,by='id') %>% 
-  arrange(id,time) %>% 
-  mutate(terr=ifelse(time==0,0,runif(1,0,+90)),
-         date=dateonset+time+terr,
-         yoo=year(dateonset),
-         yoo_c=yoo-mean(yoo))
+visits %>%
+  mutate(years=cut(timen,c(0,1,2,4,6,8,Inf),right=FALSE,labels=c("0-1","1-2","2-4","4-6","6-8","8+"))) %>%
+  group_by(years) %>%
+  summarise(mean_HUI=round(mean(hui_untrt),2),
+            near_ceiling=round(mean(hui_untrt>0.95),3),
+            near_floor=round(mean(hui_untrt< -0.3),3),.groups="drop")
 ```
 
-Define intercept
+# Treatment effect
+
+The same fifteen patients, as if treated from onset (anchored branch: treatment starts at onset), with the illustrative $\gamma$. Dashed: untreated; solid: treated. Same measurement error in both.
 
 ```{r}
-b0=0.95-(0.018*mean(df$sex=="male")+0.042*mean(df$aoo)+0.0002*mean(df$yoo))
-```
-
-Define random intercept for each participant
-
-```{r}
-set.seed(181299)
-df=df %>% 
-  group_by(id) %>% 
-  mutate(row=row_number(),
-         u0 = rnorm(1,0,0.07),         
-         epsilon = rnorm(n(),0,0.08),
-         timen=as.numeric(date-dateonset)/365.25)
-```
-
-### Untreated outcome
-
-Shape of time against HUI
-
-```{r}
-# random draw
-ids=sample(unique(df$id),15)
-# create hui_prova
-df_prova=df %>% 
-  mutate(hui_prova=1.5/(1+exp(2*(timen-1))))
-# plot
-df_prova %>% 
-  filter(id %in% ids) %>% 
-  ggplot(.,aes(x=timen,y=hui_prova,group=id))+
-  geom_point()+
+visits %>% filter(id %in% ids) %>%
+  mutate(hui_trt=hui(eta0+gamma*timen+eps)) %>%
+  pivot_longer(c(hui_untrt,hui_trt),names_to="arm",values_to="HUI") %>%
+  mutate(arm=ifelse(arm=="hui_trt","treated","untreated")) %>%
+  ggplot(aes(x=timen,y=HUI,group=interaction(id,arm),colour=factor(id),linetype=arm))+
+  geom_hline(yintercept=c(L,U),linetype=2,colour="grey50")+
   geom_line()+
-  labs(x='Disease duration',y='HUI (quadratic)')+
-  geom_hline(yintercept=-0.5,lty=2)+
+  scale_linetype_manual(values=c(treated="solid",untreated="dashed"))+
+  guides(colour="none")+
+  labs(x="Years since start of treatment (= onset)",y="HUI",linetype=NULL)+
+  theme_bw()+theme(legend.position="bottom")
+```
+
+The effect on the HUI scale at 2 years depends on where the patient is on the curve: the same $\gamma$ gives a small effect close to the ceiling or the floor and a large effect in the middle.
+
+```{r}
+visits %>% filter(timen>=1.9,timen<=2.1) %>%
+  mutate(hui_trt=hui(eta0+gamma*timen+eps),effect=hui_trt-hui_untrt) %>%
+  ggplot(aes(x=hui_untrt,y=effect))+
+  geom_point(alpha=0.5)+
+  labs(x="Untreated HUI at 2 years",y="Treated - untreated HUI at 2 years",
+       title=paste0("Effect at 2 years for gamma = ",gamma))+
   theme_bw()
 ```
 
-Plot data for fifteen patients
+# knitr
 
 ```{r}
-# add treatment effect
-df=df %>% 
-  mutate(hui_linear_untrt = (b0+u0) + 0.03*aoo + 0.01*(sex=="male") + 0.0002*yoo + 1.5/(1+exp(2.5*(timen-1)))+epsilon)
-# plot those random individuals
-df %>% 
-  filter(id %in% ids) %>% 
-  ggplot(.,aes(x=timen,y=hui_linear_untrt,group=id))+
-  geom_point()+
-  geom_line()+
-  labs(x='Disease duration',y='HUI (quadratic)')+
-  geom_hline(yintercept=-0.5,lty=2)+
-  theme_bw()
-```
-
-Plot data in time for patients
-
-```{r}
-# random draw
-ids=sample(unique(df$id),15)
-# plot those random individuals
-df %>% 
-  filter(id %in% ids) %>% 
-  ggplot(.,aes(x=date,y=hui_linear_untrt,group=id))+
-  geom_point()+
-  geom_line()+
-  labs(x='Disease duration',y='HUI (linear)')+
-  geom_hline(yintercept=-0.5,lty=2)+
-  theme_bw()
-```
-
-### Treated data
-
-Say the treatment becomes available on the 31st of May 2021
-
-```{r}
-# simulate probability of treatment
-df=df %>% 
-  group_by(id) %>% 
-  mutate(trialdate=as.Date(round(runif(1,15000,17000))),
-         trt_yoo=ifelse(dateonset>=trialdate,1,0),
-         ptrt_conf=1/(1+exp(-(+2 - 0.55*aoo + 2*I(sex=='male')))),
-         trt_conf=rbinom(1,1,ptrt_conf),
-         trt=ifelse(trt_conf == 1 & trt_yoo == 1,1,0))
-# see distribution of covariates
-hist(df$ptrt_conf,col='white',
-     main='Distribution of P(T|X)',
-     xlab='Probability')
-range(df$ptrt_conf)
-```
-
-Define overall treatment indicator
-
-```{r}
-df=df %>% 
-  group_by(id) %>% 
-  mutate(trt_overall=ifelse(sum(trt)>=1,1,0))
-```
-
-Delete those patients who are historical controls but after the trial starts
-
-```{r}
-ids=df %>%
-  group_by(id) %>% 
-  filter(row_number()==1) %>% 
-  ungroup() %>% 
-  mutate(flag=ifelse(trt_overall==0 & trt_yoo==1,1,0)) %>% 
-  filter(flag==0) %>% 
-  select(id)
-# now select
-df=df %>% 
-  filter(id %in% ids$id)
-```
-
-Quantify confounding
-
-```{r}
-# create baseline
-baseline=df %>% 
-  group_by(id) %>% 
-  filter(row_number()==1) %>% 
-  ungroup()
-# smd
-smd(baseline$aoo,baseline$trt_overall)
-smd(baseline$sex,baseline$trt_overall)
-```
-
-Define start of the trial and time on treatment
-
-```{r}
-df=df %>% 
-  arrange(desc(trt_overall),id,date) %>% 
-  group_by(id) %>%
-  mutate(lastvisit=max(date),
-         starttrial=as.Date(ifelse(any(trt == 1),
-                              min(date[trt == 1], na.rm = TRUE),
-                              as.Date(NA)))) %>%
-  ungroup()
-```
-
-Redefine time for treated participants
-
-```{r}
-df=df %>% 
-  arrange(id, date) %>% 
-  group_by(id)                       
-```
-
-Loop to redefine date
-
-```{r}
-# loop to redefine dates
-df=df %>% 
-  group_by(id) %>% 
-  mutate(date=if_else(trt==1, starttrial+90*(cumsum(trt)-1), date)) %>% 
-  ungroup()
-```
-
-Define treatment effect
-
-```{r}
-df=df %>% 
-  mutate(timen=as.numeric(date-dateonset)/365.25,
-         timen_trt=ifelse(trt==0,
-                          0,
-                          as.numeric(date-starttrial)/365.25),
-         hui_linear_trt=hui_linear_untrt+0*trt+0.05*trt*timen) %>% 
-  group_by(id,trt) %>% 
-  filter(!(trt==1 & !(row_number() %in% c(1,2,3,5,7,9))))
-```
-
-Define missing data and filter out observations higher than two years for treated participants
-
-```{r}
-set.seed(181299)
-df=df %>% 
-  mutate(pmiss=ifelse(trt==1 | time==0 ,0,0.4),
-         miss=rbinom(n(),1,pmiss)) %>% 
-  group_by(id) %>% 
-  mutate(flag=ifelse(trt_overall==1 & sum(trt)<6,1,0))%>%
-  ungroup() %>% 
-  filter(flag==0) %>% 
-  filter(timen_trt<=2)
-```
-
-Plot all patients
-
-```{r}
-# plot
-df %>% 
-  #filter(year(date)>2013 & trt_overall==0) %>% 
-  ggplot(aes(x = date, y = hui_linear_trt,col=factor(trt),group=id)) +
-  geom_point()+
-  geom_line()+
-  scale_color_manual(values = c('#FF3300','#0099FF'))+
-  labs(x = 'Disease duration', y = 'HUI (linear)') +
-  geom_hline(yintercept = -0.5, lty = 2) +
-  theme_bw()
-```
-
-Plot simulated outcome for the same patient, both treated and untreated.
-
-```{r}
-# sample one id
-singleid=sample(unique(df$id[which(df$trt == 1)]),1)
-# plot
-df %>% 
-  filter(id %in% singleid) %>%
-  filter(miss==0) %>% 
-  ggplot() +
-  geom_point(aes(x = date, y = hui_linear_trt), col = '#0099FF') +
-  geom_line(aes(x = date, y = hui_linear_trt), col = '#0099FF') +
-  geom_point(aes(x = date, y = hui_linear_untrt), col = '#FF3300') +
-  geom_line(aes(x = date, y = hui_linear_untrt), col = '#FF3300') +
-  labs(x = 'Disease duration', y = 'HUI (linear)') +
-  geom_hline(yintercept = -0.5, lty = 2) +
-  theme_bw()
-```
-
-Save dataset
-
-```{r}
-writexl::write_xlsx(df,"C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\population_hui_like_without_dur_logistic.xlsx")
-```
-
-Purl
-
-```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\shape_linear.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\shape_logistic.qmd")
 ```
