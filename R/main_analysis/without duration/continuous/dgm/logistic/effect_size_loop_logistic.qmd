@@ -22,6 +22,8 @@ for (i in 1:length(function_dirs)){
   files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
 sapply(files, source)
 }
+# other function for looping 
+expit=function(x) 1/(1+exp(-x))
 ```
 
 # Simulation scenario
@@ -58,7 +60,6 @@ covs=data.frame(id=1:n,
               aoo=runif(n,0,8),
               event=1,
               u0=rnorm(n,0,0.5),
-              eps=rnorm(n,0,0.3),
               sex=sample(c('male','female'),n,replace=T))
 ```
 
@@ -76,6 +77,7 @@ df=merge(covs,tid,by='id') %>%
   mutate(terr=ifelse(time==0,0,runif(n,0,+90)),
          date=dateonset+time+terr,
          yoo=year(dateonset),
+         eps=rnorm(n(),0,0.3),
          yoo_c=yoo-mean(yoo))
 ```
 
@@ -121,14 +123,14 @@ gammas=c(0.0000,0.0961,0.3164,0.8172)
 # set path
 folder="C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\continuous\\population_logistic_diff_"
 # save multiple dataset
-for (i in 1:length(targets)){
+for (i in 1:length(gammas)){
   # redefine time axis
   # define treatment effect and  select only certain time points
 df_sim=df_sim %>% 
   mutate(timen=as.numeric(date-firstvisit)/365.25,
          eta0=2.0877+u0+0.0299*(aoo-mean(covs$aoo))-0.1406*((sex=="male")-mean(covs$sex=="male"))+0.0183*yoo_c-0.62*timen,
          hui_untrt=-0.36+(1+0.36)*expit(eta0+eps),
-         hui_trt=-0.36+(1+0.36)*expit(eta0+gammas[i]*timen+eps))
+         hui_trt=-0.36+(1+0.36)*expit(eta0+gammas[i]*trt*timen+eps))
   # define dataset
   path=paste(folder,targets[i]*2,".rds",sep="")
   # save dataset
@@ -140,5 +142,5 @@ df_sim=df_sim %>%
 Purl
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\effect_size_loop.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\effect_size_loop_logistic.qmd")
 ```
