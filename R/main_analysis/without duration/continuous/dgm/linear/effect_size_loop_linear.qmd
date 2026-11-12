@@ -133,8 +133,8 @@ for (i in 1:length(targets)){
 df_sim=df_sim %>% 
   mutate(timen=as.numeric(date-firstvisit)/365.25,
          b0 = 0.95 - (0.009*mean(aoo) - 0.042*mean(sex=="male") + 0.005*mean(yoo_c)),
-         hui_linear_untrt = (b0+u0)+ 0.009*aoo - 0.042*(sex=="male")  + 0.005*yoo_c -0.1*timen+epsilon,
-         hui_linear_trt=hui_linear_untrt+0*trt+targets[i]*trt*timen)
+         hui_untrt = (b0+u0)+ 0.009*aoo - 0.042*(sex=="male")  + 0.005*yoo_c -0.1*timen+epsilon,
+         hui_trt=hui_linear_untrt+0*trt+targets[i]*trt*timen)
   # define dataset
   path=paste(folder,targets[i]*2,".rds",sep="")
   # save dataset
@@ -146,5 +146,5 @@ df_sim=df_sim %>%
 Purl
 
 ```{r}
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\effect_size_loop.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\without duration\\continuous\\dgm\\effect_size_loop_linear.qmd")
 ```

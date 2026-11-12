@@ -1,0 +1,122 @@
+## -------------------------------------------------------------------------------------------------------
+pacman::p_load(dplyr,ggplot2,lubridate,ipw,emmeans,marginaleffects,
+               lpSolve,randomForest,
+               optmatch,lme4,lmerTest,ggdag,RColorBrewer,MatchIt,lubridate)
+
+
+## -------------------------------------------------------------------------------------------------------
+function_dirs=c("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\without duration",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\matching",
+                "C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\regression")
+for (i in 1:length(function_dirs)){
+  files=list.files(function_dirs[i], pattern = "\\.R$", full.names = TRUE)
+sapply(files, source)
+}
+# other function for looping 
+expit=function(x) 1/(1+exp(-x))
+
+
+## -------------------------------------------------------------------------------------------------------
+set.seed(3111963)
+# define N
+n=1e4
+# define start and end of registry
+start_date=as.Date("2005-01-01")
+end_date=as.Date("2022-12-31")
+max_days=as.numeric(end_date - start_date)
+# simulate dates
+backward_days=rtruncexp(n=n,
+                        rate=0.0002,
+                        max=max_days)
+# calculate onset date
+onsetdatev=end_date-floor(backward_days)
+# see distribution
+hist(as.numeric(onsetdatev),
+     breaks = 100,
+     main = "Time before end date",
+     xlab = "Date of onset (numeric)")
+abline(v=as.numeric(as.Date('2021-05-31')),col="red",lty=2,lwd=2)
+
+
+## -------------------------------------------------------------------------------------------------------
+covs=data.frame(id=1:n,
+                dateonset=onsetdatev,
+              aoo=runif(n,0,8),
+              event=1,
+              u0=rnorm(n,0,0.5),
+              sex=sample(c('male','female'),n,replace=T))
+
+
+## -------------------------------------------------------------------------------------------------------
+set.seed(181299)
+t=seq(0,365.25*10,by=182.625)
+id=1:n
+# expand time
+tid=expand.grid(id=id,time=t)
+# merge with covariates
+df=merge(covs,tid,by='id') %>% 
+  arrange(id,time) %>% 
+  mutate(terr=ifelse(time==0,0,runif(n,0,+90)),
+         date=dateonset+time+terr,
+         yoo=year(dateonset),
+         eps=rnorm(n(),0,0.3),
+         yoo_c=yoo-mean(yoo))
+
+
+## -------------------------------------------------------------------------------------------------------
+df_sim=df %>% 
+    group_by(id) %>% 
+    mutate(trialdate=as.Date("2021-05-31"),
+           trt_yoo=ifelse(dateonset>=trialdate,1,0),
+           ptrt_conf=1/(1+exp(-(-1 - 0.304*aoo + 1.41*I(sex=='male')))),
+           trt_conf=rbinom(1,1,ptrt_conf),
+           trt=ifelse(trt_conf == 1 & trt_yoo == 1,1,0),
+           trt_overall=ifelse(sum(trt)>=1,1,0)) %>% ungroup()
+# filter out historical controls after treatment became available
+df_sim=df_sim %>% 
+    mutate(flag=ifelse(trt_overall==0 & trt_yoo==1,1,0)) %>% 
+    filter(flag==0)
+# define start of the trial to reset trial
+df_sim=df_sim %>% 
+  arrange(desc(trt_overall),id,date) %>% 
+  group_by(id) %>%
+  mutate(firstvisit=min(date),
+         lastvisit=max(date),
+         starttrial=as.Date(ifelse(any(trt == 1),
+                            min(date[trt == 1], na.rm = TRUE),
+                            as.Date(NA)))) %>%
+  ungroup()
+# loop to redefine dates
+df_sim=df_sim %>% 
+  group_by(id) %>% 
+  mutate(date=if_else(trt==1, starttrial+90*(cumsum(trt)-1), date)) %>% 
+  ungroup()
+
+
+## -------------------------------------------------------------------------------------------------------
+# set seed for missing data
+set.seed(181299)
+# targets
+gammas=c(0.0000,0.0961,0.3164,0.8172)
+# set path
+folder="C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\without duration\\continuous\\population_logistic_diff_"
+# save multiple dataset
+for (i in 1:length(gammas)){
+  # redefine time axis
+  # define treatment effect and  select only certain time points
+df_sim=df_sim %>% 
+  mutate(timen=as.numeric(date-firstvisit)/365.25,
+         eta0=2.0877+u0+0.0299*(aoo-mean(covs$aoo))-0.1406*((sex=="male")-mean(covs$sex=="male"))+0.0183*yoo_c-0.62*timen,
+         hui_untrt=-0.36+(1+0.36)*expit(eta0+eps),
+         hui_trt=-0.36+(1+0.36)*expit(eta0+gammas[i]*trt*timen+eps))
+  # define dataset
+  path=paste(folder,gammas[i]*2,".rds",sep="")
+  # save dataset
+  saveRDS(df_sim,
+          path)
+}
+
+
+## -------------------------------------------------------------------------------------------------------
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\non_linear_decay\\without_duration\\dgm\\logistic\\effect_size_loop_logistic.qmd")
+
