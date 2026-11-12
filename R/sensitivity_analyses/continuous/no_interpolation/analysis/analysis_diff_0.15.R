@@ -95,7 +95,8 @@ with_progress({
                            ratio=ratioi,
                            id=id,
                            methods=matching_methods,
-                           landmark=2)
+                           landmark=2,
+                           interpolation=FALSE)
         })
       )
       # bootstrap
@@ -113,7 +114,8 @@ with_progress({
                              ratio=ratioi,
                              id=id,
                              methods=matching_methods,
-                             landmark=2)
+                             landmark=2,
+                             interpolation=FALSE)
           })
         ) %>% mutate(boot=b)
       }
@@ -144,9 +146,9 @@ elapsed; elapsed["elapsed"]
 
 
 ## ---------------------------------------------------------------------------------------------------------------------
-saveRDS(results,"C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\main_analysis\\with duration\\continuous\\results_diff_0.15.rds")
+saveRDS(results,"C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Data\\paper\\sensitivity_analysis\\no_interpolation\\results_diff_0.15.rds")
 
 
 ## ---------------------------------------------------------------------------------------------------------------------
-knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\main_analysis\\with duration\\continuous\\analysis\\analysis_diff_0.15.qmd")
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\no_interpolation\\analysis\\analysis_diff_0.15.qmd")
 
