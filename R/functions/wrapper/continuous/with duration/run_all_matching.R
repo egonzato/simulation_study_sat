@@ -1,4 +1,4 @@
-run_all_matching=function(data,ratio,methods,landmark=2,id=id){
+run_all_matching=function(data,ratio,methods,landmark=2,id=id,interpolation=T){
   out=bind_rows(
     lapply(
       seq_len(length(methods)),
@@ -8,7 +8,8 @@ run_all_matching=function(data,ratio,methods,landmark=2,id=id){
           methods=methods[i],
           ratio=ratio,
           landmark=landmark,
-          id=id
+          id=id,
+          interpolation=interpolation
         )
       }
     )
