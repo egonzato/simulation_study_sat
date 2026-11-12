@@ -54,7 +54,7 @@ df=df %>%
 
 ## -----------------------------------------------------------------------------------------------------------------------------------------------------------
 # population constants, computed once and outside any grouping
-b0=0.95-(0.0093*mean(df$aoo)-0.0430*mean(df$sex=="male")+0.005*mean(df$yoo_c))
+b0=0.75-(0.0093*mean(df$aoo)-0.0430*mean(df$sex=="male")+0.005*mean(df$yoo_c))
 
 df_sim=df %>% 
   group_by(id) %>% 

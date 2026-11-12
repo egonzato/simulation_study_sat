@@ -24,7 +24,7 @@ round(c(a0=a0,k=k,delta=gamma/k),3)
 ## -------------------------------------------------------------------------------------------------------
 tibble(t=seq(0,10,by=0.05)) %>%
   mutate(`logistic (sensitivity)`=hui(a0-k*t),
-         `linear (main)`=0.95-0.1*t) %>%
+         `linear (main)`=0.75-0.1*t) %>%
   pivot_longer(-t,names_to="model",values_to="HUI") %>%
   ggplot(aes(x=t,y=HUI,colour=model))+
   geom_hline(yintercept=c(L,U),linetype=2,colour="grey50")+
