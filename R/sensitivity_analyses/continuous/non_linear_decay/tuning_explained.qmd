@@ -1,0 +1,217 @@
+---
+title: "How the tuning works"
+subtitle: "A step-by-step explanation with toy examples"
+format:
+  html:
+    toc: true
+    code-fold: false
+editor: visual
+---
+
+This document explains how the parameters of the DGMs are tuned, with small examples that run in a few seconds and do not need any file of the project. It follows the same four steps as the tuning files:
+
+-   linear: `main_analysis/.../dgm/linear/tune_linear.qmd` and `main_analysis/with duration/continuous/dgm/tune.qmd`
+-   logistic: `non_linear_decay/without_duration/dgm/logistic/tune_logistic.qmd` and `non_linear_decay/with_duration/dgm/logistic/tune_logistic.qmd`
+
+The populations here are simplified (no visits, no calendar time) so that each idea can be seen on its own. The real tuning files do the same thing on the full structure of the DGM.
+
+```{r}
+pacman::p_load(dplyr,tidyr,ggplot2)
+theme_set(theme_bw())
+set.seed(2026)
+```
+
+# 0. The idea and the two tools
+
+A DGM has **knobs** (coefficients) and the study needs the simulated population to have **properties chosen in advance** (SMDs of 0.5, a confounding bias of $-0.02$, true effects of 0.05, 0.15, 0.30). Tuning means turning the knobs until the properties are right. Each step is a **search**: *find the value of the knob for which this summary of the population equals the target*.
+
+Two R functions do the searching:
+
+-   `uniroot(f, interval)`: finds $x$ such that $f(x)=0$. For one knob and one target we write $f(x) = \text{summary}(x) - \text{target}$.
+-   `optim(start, obj)`: finds the values that minimise a function. For two knobs and two targets at once we write $\text{obj} = (\text{summary}_1-\text{target}_1)^2+(\text{summary}_2-\text{target}_2)^2$, which is 0 only when both targets are met.
+
+A toy example: which $x$ gives $x^2=2$?
+
+```{r}
+f=function(x) x^2-2
+root=uniroot(f,c(0,3))$root
+root
+tibble(x=seq(0,3,by=0.01),f=f(x)) %>%
+  ggplot(aes(x=x,y=f))+geom_line()+
+  geom_hline(yintercept=0,linetype=2)+geom_vline(xintercept=root,colour="red")+
+  labs(title="uniroot searches where f(x) crosses 0",y="f(x) = x^2 - 2")
+```
+
+`uniroot` needs an interval in which $f$ changes sign; inside it, it narrows down the crossing point. Everything in the tuning files is code that computes the summary for a given value of the knob, wrapped in one of these two functions.
+
+# 1. Treatment model: SMDs
+
+**Knobs**: $t_{age}$ and $t_{sex}$ in $P(\text{treated})=\text{expit}(t_{int}-t_{age}\,aoo+t_{sex}\,male)$.
+
+**Target**: SMD of 0.5 for age of onset and for sex between treated and controls.
+
+**How**: for given knobs, simulate who is treated, compute the two SMDs, and let `optim` move the knobs until both are 0.5. This step does not involve the HUI at all, so it comes first and gives the same values in the linear and logistic tunings.
+
+A toy population: half of the patients are "after the trial date" and can be treated; the others are historical controls.
+
+```{r}
+n=1e5
+toy=tibble(aoo=runif(n,0,8),male=as.integer(runif(n)<0.5),
+           u=runif(n),post=runif(n)<0.5)
+smd_abs=function(x,g) abs((mean(x[g==1])-mean(x[g==0]))/sqrt((var(x[g==1])+var(x[g==0]))/2))
+# who is treated, for given knobs; untreated patients after the trial date are not controls
+select_trt=function(t_age,t_sex,t_int=-1){
+  toy %>% mutate(trt=as.integer(u<plogis(t_int-t_age*aoo+t_sex*male) & post)) %>%
+    filter(trt==1 | !post)
+}
+smds=function(t_age,t_sex){ d=select_trt(t_age,t_sex); c(age=smd_abs(d$aoo,d$trt),sex=smd_abs(d$male,d$trt)) }
+smds(0.2,1)      # some knobs: SMDs are not 0.5 yet
+```
+
+How the SMD of age depends on $t_{age}$ (with $t_{sex}$ fixed): a steeper effect of age on treatment makes the treated younger, and the SMD larger.
+
+```{r}
+tibble(t_age=seq(0,0.6,by=0.05)) %>%
+  rowwise() %>% mutate(smd_age=smds(t_age,1.4)["age"]) %>% ungroup() %>%
+  ggplot(aes(x=t_age,y=smd_age))+geom_line()+geom_point()+
+  geom_hline(yintercept=0.5,linetype=2)+
+  labs(title="SMD of age as a function of t_age (t_sex = 1.4)",x="t_age",y="SMD age")
+```
+
+`optim` moves both knobs at once until both SMDs hit 0.5:
+
+```{r}
+obj=function(par) sum((smds(par[1],par[2])-c(0.5,0.5))^2)
+o=optim(c(0.2,1),obj,method="Nelder-Mead")
+round(c(t_age=o$par[1],t_sex=o$par[2],smds(o$par[1],o$par[2])),3)
+```
+
+# 2. The latent scale and why the logistic tuning needs simulation
+
+In the linear DGM a coefficient has a fixed meaning: $+0.009$ per year of age of onset is $+0.009$ HUI, for every patient at every time. In the logistic DGM the coefficients act on a latent scale $\eta$, and the HUI is
+
+$$HUI = L+(U-L)\,\text{expit}(\eta),\qquad L=-0.36,\;U=1$$
+
+How much the HUI changes when $\eta$ changes by one unit is the **slope** of this curve, $(U-L)\,p\,(1-p)$ with $p=\text{expit}(\eta)$, and it depends on where the patient is:
+
+```{r}
+L=-0.36; U=1
+expit=function(x) 1/(1+exp(-x))
+hui=function(eta) L+(U-L)*expit(eta)
+slope=function(eta) (U-L)*expit(eta)*(1-expit(eta))
+tibble(eta=seq(-5,5,by=0.05)) %>%
+  mutate(HUI=hui(eta),`dHUI / d eta`=slope(eta)) %>%
+  pivot_longer(-eta) %>%
+  ggplot(aes(x=eta,y=value))+geom_line()+facet_wrap(~name,scales="free_y")+
+  labs(title="The same change in eta moves the HUI a lot in the middle and little near the bounds",x="eta (latent scale)",y=NULL)
+```
+
+Consequences:
+
+-   **Drift** (step 2 in the tuning files): to get about 0.005 HUI per year on average, the latent coefficient is $\beta_{yoo}=0.005/\overline{\text{slope}}$, with the slope averaged over the patients where it matters (the treated at the landmark). This is a conversion, not a search.
+-   **Confounding and treatment effects** (steps 3 and 4): there is no closed formula any more, because every patient has a different slope. The tuning computes the HUI of every patient for a given knob and searches the knob with `uniroot`.
+
+# 3. Confounding: covariate effects
+
+**Knobs**: the effects of age of onset and sex on the HUI.
+
+**Target**: because of these two covariates, the untreated HUI of the treated differs from that of the controls by $-0.02$ at the landmark, half from each covariate.
+
+**Linear**: a formula. If the treated are on average $\Delta_{aoo}$ years younger at onset, a coefficient $b_{aoo}$ creates a difference $b_{aoo}\,\Delta_{aoo}$ in HUI, exactly. So $b_{aoo}=0.5\times(-0.02)/\Delta_{aoo}$, and the same for sex.
+
+**Logistic**: fix the split (each covariate contributes half of a latent difference $s$: $\beta_{aoo}\Delta_{aoo}=\beta_{male}\Delta_{male}=s/2$) and search $s$ so that the **simulated** HUI difference is $-0.02$.
+
+```{r}
+d=select_trt(o$par[1],o$par[2])
+diff_aoo=mean(d$aoo[d$trt==1])-mean(d$aoo[d$trt==0])
+diff_male=mean(d$male[d$trt==1])-mean(d$male[d$trt==0])
+c(diff_aoo=diff_aoo,diff_male=diff_male)
+# toy latent scale at the landmark: average level, random intercept, measurement error
+a=0.5; k=0.62; landmark=2
+d=d %>% mutate(u0=rnorm(n(),0,0.5),eps=rnorm(n(),0,0.3))
+coefs=function(s) c(b_aoo=0.5*s/diff_aoo,b_male=0.5*s/diff_male)
+bias_hui=function(s){
+  b=coefs(s)
+  h0=hui(a+d$u0+b["b_aoo"]*(d$aoo-4)+b["b_male"]*(d$male-0.5)-k*landmark+d$eps)
+  mean(h0[d$trt==1])-mean(h0[d$trt==0])
+}
+s=uniroot(function(s) bias_hui(s)-(-0.02),c(-3,3))$root
+round(c(s=s,coefs(s),bias=bias_hui(s)),4)
+```
+
+The search, drawn: the simulated bias as a function of $s$, and where it crosses the target.
+
+```{r}
+tibble(s=seq(-0.4,0.1,by=0.01)) %>% rowwise() %>% mutate(bias=bias_hui(s)) %>% ungroup() %>%
+  ggplot(aes(x=s,y=bias))+geom_line()+
+  geom_hline(yintercept=-0.02,linetype=2)+geom_vline(xintercept=s,colour="red")+
+  labs(title="Confounding bias (HUI scale) as a function of the latent scale s",
+       x="s (latent difference due to age and sex)",y="treated - controls, untreated HUI")
+```
+
+What would happen if we used the linear formula on the latent scale? The latent difference would be $-0.02$, but on the HUI scale the bias is compressed by the slope:
+
+```{r}
+c(latent_difference=-0.02,bias_on_HUI_scale=bias_hui(-0.02))
+```
+
+In the **unanchored** tuning, the controls of a treated patient with waiting time $w$ are only those still in follow-up at $w$ (duration $>w$), as duration matching would choose, and both are compared at $w+2$ years since onset. The search is the same; only the comparison group changes.
+
+# 4. Treatment effects
+
+**Knob**: $\gamma$, the treatment effect on the latent scale ($+\gamma$ per year on treatment: a slower progression).
+
+**Target**: the true effect, the average treated minus untreated HUI of the treated at the landmark, equal to 0.05, 0.15 and 0.30.
+
+**Linear**: by construction, the effect at 2 years is slope $\times$ 2.
+
+**Logistic**: for every treated patient, compute the HUI at the landmark with and without $\gamma$ (same patient, same measurement error) and average the difference. Then `uniroot` for every target. This step comes last because the answer depends on where steps 1 to 3 have put the treated on the curve.
+
+```{r}
+b=coefs(s)
+tr=d %>% filter(trt==1)
+eta_t=a+tr$u0+b["b_aoo"]*(tr$aoo-4)+b["b_male"]*(tr$male-0.5)-k*landmark+tr$eps
+h0=hui(eta_t)
+effect=function(gamma) mean(hui(eta_t+gamma*landmark)-h0)
+targets=c(0.05,0.15,0.30)
+gammas=sapply(targets,function(target) uniroot(function(g) effect(g)-target,c(0,20))$root)
+tibble(target=targets,gamma=round(gammas,4),check=round(sapply(gammas,effect),4))
+```
+
+The search, drawn: the true effect as a function of $\gamma$. It is not a straight line, and it cannot go above the **largest possible effect** (all treated at the ceiling), which the tuning files print as a check.
+
+```{r}
+tibble(gamma=seq(0,3,by=0.02)) %>% rowwise() %>% mutate(effect=effect(gamma)) %>% ungroup() %>%
+  ggplot(aes(x=gamma,y=effect))+geom_line()+
+  geom_hline(yintercept=targets,linetype=2)+geom_vline(xintercept=gammas,colour="red")+
+  geom_hline(yintercept=mean(U-h0),linetype=3,colour="grey40")+
+  annotate("text",x=0.2,y=mean(U-h0),label="largest possible effect",vjust=-0.5,hjust=0,size=3)+
+  labs(title="True effect at the landmark as a function of gamma",x="gamma (latent scale)",y="treated - untreated HUI")
+```
+
+The same $\gamma$ gives a different effect to every patient, depending on where the patient is on the curve; the true effect is their average:
+
+```{r}
+tibble(untreated=h0,effect=hui(eta_t+gammas[2]*landmark)-h0) %>%
+  slice_sample(n=3000) %>%
+  ggplot(aes(x=untreated,y=effect))+geom_point(alpha=0.3,size=0.8)+
+  geom_hline(yintercept=0.15,linetype=2)+
+  labs(title=paste0("Individual effects for gamma = ",round(gammas[2],3)," (average 0.15)"),
+       x="untreated HUI at the landmark",y="treated - untreated HUI")
+```
+
+In the **unanchored** tuning the treated start at different waiting times $w$, so the landmark is $w+2$ years since onset: they are at different points of the curve already before the treatment, and the true effect is averaged over the actual distribution of waiting times.
+
+# 5. Why this order
+
+1.  The **treatment model** decides who is treated and who is a control: it does not depend on the HUI.
+2.  The **drift** and the **covariate effects** decide where treated and controls are on the curve, given who they are.
+3.  The **treatment effect** depends on where the treated are on the curve, so it is tuned last.
+
+Changing an earlier step changes the later ones; changing a later step does not change the earlier ones. If any parameter of the shape ($a_0$, $k$, SDs) or of the selection changes, the tuning has to be run again from the top.
+
+# 6. How to check that the tuning worked
+
+-   **In the tuning file**: every step prints the result next to its target (`smd_age`, `smd_sex`, `bias`, the `check` column for $\gamma$). If they match, the search worked.
+-   **In the DGM**: after generating a population, compute the SMDs at baseline and the mean of `hui_trt - hui_untrt` among the treated at the last protocol visit. They should be close to the targets (not exactly: the DGM population is smaller and the last visit is at 1.97 rather than 2 years).
+-   **By hand**: change one knob (e.g. evaluate `effect(0.2)` and `effect(0.4)` above) and see how the summary responds. This is the quickest way to see why the logistic version needs a search and the linear one does not.
