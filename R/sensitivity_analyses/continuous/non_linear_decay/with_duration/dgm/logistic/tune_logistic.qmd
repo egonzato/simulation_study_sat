@@ -1,0 +1,193 @@
+---
+title: "Tuning of the logistic (non-linear) DGM, unanchored"
+format: html
+editor: visual
+---
+
+Parameters of the non-linear DGM for the unanchored branch (with disease duration). The outcome model is the one defined in `without_duration/dgm/logistic/shape_logistic.qmd` (same shape, same bounds), with the treatment acting on the time since trial entry:
+
+$$
+\eta_{ij} = a_0 + u_{0i} + \beta_{aoo}\,(aoo_i-\overline{aoo}) + \beta_{male}\,(male_i-\overline{male}) + \beta_{yoo}\,yoo^c_i - k\,t_{ij} + \gamma\,trt_{ij}\,t^{trt}_{ij} + \varepsilon_{ij},
+\qquad HUI_{ij} = L + (U-L)\,\text{expit}(\eta_{ij})
+$$
+
+with $t_{ij}$ the years since onset and $t^{trt}_{ij}$ the years since trial entry. The parameters are chosen so that the populations have the same properties as the linear unanchored branch (`main_analysis/with duration/continuous/dgm/tune.qmd`):
+
+1.  **treatment model**: SMDs of 0.5 for age of onset and sex between treated and historical controls, with the selection rules of the unanchored DGM (treated: onset before the trial date and at least 9 visits after it; controls: never eligible, onset before the trial date, at least 5 visits before it); the treatment model does not depend on the HUI, so these values match the linear branch;
+2.  **drift**: year of onset changes the HUI by about 0.005 per year;
+3.  **confounding**: the difference in untreated HUI between the treated and the controls that are still in follow-up at the treated patient's waiting time $w$, compared 2 years later (at $w+2$ years since onset), due to age of onset and sex, is $-0.02$, half from each covariate;
+4.  **treatment effects**: the true effect on the HUI scale 2 years after trial entry among the treated (treated minus untreated HUI of the same patients) is 0, 0.05, 0.15 and 0.30.
+
+Treated patients enter the trial at different disease durations, so they are at different points of the curve: the same $\gamma$ gives different effects on the HUI scale, and the true effect is computed over the actual distribution of waiting times.
+
+# Libraries
+
+```{r}
+pacman::p_load(dplyr,lubridate)
+```
+
+# Settings
+
+```{r}
+source("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\functions\\wrapper\\continuous\\with duration\\rtruncexp.R")
+# shape, as in shape_logistic.qmd
+expit=function(x) 1/(1+exp(-x)); logit=function(p) log(p/(1-p))
+L=-0.36; U=1
+hui=function(eta) L+(U-L)*expit(eta)
+eta_of=function(h) logit((h-L)/(U-L))
+hui_onset=0.85; hui_ref=0; t_ref=5
+a0=eta_of(hui_onset)
+k=(eta_of(hui_onset)-eta_of(hui_ref))/t_ref
+sd_u0=0.5; sd_eps=0.3
+# targets, as in the linear unanchored branch
+target_smd_age=0.5; target_smd_sex=0.5; t_int=0
+target_bias=-0.20*0.10; share_age=0.5
+drift_hui=0.005
+targets=c(0,0.025,0.075,0.15)*2     # true effects 2 years after entry: 0, 0.05, 0.15, 0.30
+landmark=2
+# selection rules of the unanchored DGM
+min_vis=9; min_pre=5
+trialdate=as.Date("2021-05-31")
+n=4e5
+```
+
+# Population
+
+Patients with the covariates of the main DGM, the random intercept and the measurement error at the landmark, and the visit schedule of the DGM (every 6 months for 10 years, up to 90 days of delay), which determines who can be treated, the waiting time of the treated and the follow-up of the controls before the trial date.
+
+```{r}
+set.seed(3111963)
+end_date=as.Date("2022-12-31")
+pop=tibble(dateonset=end_date-floor(rtruncexp(n=n,rate=0.0002,max=as.numeric(end_date-as.Date("2005-01-01")))),
+           aoo=runif(n,0,8),
+           male=as.integer(runif(n)<0.5),
+           u=runif(n),
+           u0=rnorm(n,0,sd_u0),
+           eps=rnorm(n,0,sd_eps)) %>%
+  mutate(yoo=year(dateonset),
+         yoo_c=yoo-mean(yoo),
+         post=dateonset>=trialdate)
+# visit schedule
+tt=seq(0,365.25*10,by=182.625); jitter=90
+set.seed(22101957)
+nvis_post=integer(n); npre=integer(n); first_post=rep(NA_real_,n); lastdur=rep(NA_real_,n)
+for (j in seq_along(tt)){
+  dj=as.numeric(pop$dateonset)+tt[j]+(if (j==1) 0 else runif(n,0,jitter))
+  pre_j=dj<as.numeric(trialdate)
+  nvis_post=nvis_post+!pre_j
+  npre=npre+pre_j
+  first_post=ifelse(is.na(first_post) & !pre_j,dj,first_post)
+  lastdur=ifelse(pre_j,dj-as.numeric(pop$dateonset),lastdur)
+}
+pop=pop %>% mutate(nvis_post=nvis_post,                              # visits on/after the trial date
+                   npre=npre,                                        # visits before the trial date
+                   wait=(first_post-as.numeric(dateonset))/365.25,   # years from onset to trial entry
+                   lastdur=lastdur/365.25)                           # years from onset to the last visit before the trial date
+rm(dj,pre_j,first_post,nvis_post,npre,lastdur)
+aoo_mean=mean(pop$aoo); male_mean=mean(pop$male)
+smd_abs=function(x,g) abs((mean(x[g==1])-mean(x[g==0]))/sqrt((var(x[g==1])+var(x[g==0]))/2))
+```
+
+# 1. Treatment model: SMDs
+
+```{r}
+select_trt=function(d,t_age,t_sex){
+  d %>% mutate(conf=u<plogis(t_int-t_age*aoo+t_sex*male),
+               trt_overall=conf & nvis_post>=1,                 # would have received the treatment
+               trt=as.integer(conf & nvis_post>=min_vis & !post),
+               duration=ifelse(trt==1,wait,lastdur)) %>%
+    filter(trt==1 | (!trt_overall & !post & npre>=min_pre))
+}
+obj=function(par){
+  d=select_trt(pop,par[1],par[2])
+  (smd_abs(d$aoo,d$trt)-target_smd_age)^2+(smd_abs(d$male,d$trt)-target_smd_sex)^2
+}
+o=optim(c(0.3,1.3),obj,method="Nelder-Mead",control=list(reltol=1e-10))
+t_age=o$par[1]; t_sex=o$par[2]
+d=select_trt(pop,t_age,t_sex)
+tr=d %>% filter(trt==1); ct=d %>% filter(trt==0) %>% arrange(duration)
+c(t_int=t_int,t_age=t_age,t_sex=t_sex,smd_age=smd_abs(d$aoo,d$trt),smd_sex=smd_abs(d$male,d$trt),
+  treated=nrow(tr),controls=nrow(ct))
+summary(tr$wait)          # waiting times of the treated (years)
+```
+
+# Latent scale at a given time since onset
+
+```{r}
+eta_at=function(x,tau,b_aoo,b_male,b_yoo,gamma=0,t_trt=0){
+  a0+x$u0+b_aoo*(x$aoo-aoo_mean)+b_male*(x$male-male_mean)+b_yoo*x$yoo_c-k*tau+gamma*t_trt+x$eps
+}
+slope=function(eta) (U-L)*expit(eta)*(1-expit(eta))
+```
+
+# 2. Drift
+
+Latent effect of year of onset that changes the HUI by about `drift_hui` per year, on average over the treated 2 years after entry.
+
+```{r}
+b_yoo=drift_hui/mean(slope(eta_at(tr,tr$wait+landmark,0,0,0)))
+b_yoo
+```
+
+# 3. Confounding: covariate effects
+
+As in the linear tuning, a treated patient with waiting time $w$ is compared with the controls still in follow-up at $w$ (duration $>w$), all of them equally likely; age of onset and sex each account for half of the latent difference ($\beta_{aoo}\,\Delta_{aoo}=\beta_{male}\,\Delta_{male}=s/2$, with $\Delta$ the treated minus duration-matched controls difference). $s$ is found so that the difference in untreated HUI at $w+2$ years since onset due to these covariates (drift excluded) equals `target_bias`. Waiting times are grouped in steps of 0.05 years for the controls.
+
+```{r}
+# expected covariate differences after duration matching (as matched_diffs in the linear tuning)
+suf=function(x) c(rev(cumsum(rev(x))),0)
+idx=findInterval(tr$wait,ct$duration); n_el=nrow(ct)-idx; ok=n_el>0
+diff_aoo=mean(tr$aoo[ok])-mean(suf(ct$aoo)[idx[ok]+1]/n_el[ok])
+diff_male=mean(tr$male[ok])-mean(suf(ct$male)[idx[ok]+1]/n_el[ok])
+c(diff_aoo=diff_aoo,diff_male=diff_male,treated_without_eligible_control=sum(!ok))
+coefs=function(s) c(b_aoo=share_age*s/diff_aoo,b_male=(1-share_age)*s/diff_male)
+w_bin=round(tr$wait/0.05)*0.05; bins=sort(unique(w_bin[ok]))
+bias_hui=function(s){
+  b=coefs(s)
+  h_t=hui(eta_at(tr,tr$wait+landmark,b["b_aoo"],b["b_male"],0))
+  # controls still in follow-up at w, compared at w + landmark
+  h_c=sapply(bins,function(w){
+    e=ct$duration>w
+    mean(hui(eta_at(ct[e,],w+landmark,b["b_aoo"],b["b_male"],0)))
+  })
+  h_c_tr=h_c[match(w_bin,bins)]
+  use=ok & !is.na(h_c_tr)
+  mean(h_t[use])-mean(h_c_tr[use])
+}
+s=uniroot(function(s) bias_hui(s)-target_bias,c(-3,3),tol=1e-8)$root
+b=coefs(s)
+c(s=s,b,bias=bias_hui(s))
+```
+
+# 4. Treatment effects
+
+True effect 2 years after trial entry among the treated: mean of the treated minus the untreated HUI of the same patients at $w+2$ years since onset ($t^{trt}=2$). $\gamma$ is found for every target; the largest possible effect on a bounded scale ($\gamma\to\infty$) is shown as a check.
+
+```{r}
+eta_t=eta_at(tr,tr$wait+landmark,b["b_aoo"],b["b_male"],b_yoo)
+h0=hui(eta_t)
+effect=function(gamma) mean(hui(eta_t+gamma*landmark)-h0)
+max_effect=mean(U-h0)
+gammas=sapply(targets,function(target) if (target==0) 0 else uniroot(function(g) effect(g)-target,c(0,20),tol=1e-10)$root)
+tibble(true_effect=targets,gamma=gammas,delta=gammas/k,check=sapply(gammas,effect))
+c(mean_untreated_hui_treated_2y_after_entry=mean(h0),max_possible_effect=max_effect)
+```
+
+# Parameters for the non-linear DGM
+
+To copy into `effect_size_loop_logistic.qmd` of this branch.
+
+```{r}
+params=c(a0=a0,k=k,sd_u0=sd_u0,sd_eps=sd_eps,
+         t_int=t_int,t_age=t_age,t_sex=t_sex,
+         b_aoo=unname(b["b_aoo"]),b_male=unname(b["b_male"]),b_yoo=b_yoo,
+         setNames(gammas,paste0("gamma_",targets)))
+round(params,4)
+cat(paste0("aoo_mean=",round(aoo_mean,4),"; male_mean=",round(male_mean,4)," # centring values used for the covariates\n"))
+```
+
+# knitr
+
+```{r}
+knitr::purl("C:\\Users\\P095206\\OneDrive - Amsterdam UMC\\Shared material with Elia\\PhD\\Project 5 - Simulation study in SATs\\Code\\paper\\R\\sensitivity_analyses\\continuous\\non_linear_decay\\with_duration\\dgm\\logistic\\tune_logistic.qmd")
+```
