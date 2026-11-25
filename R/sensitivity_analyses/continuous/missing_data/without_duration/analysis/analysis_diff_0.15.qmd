@@ -54,8 +54,8 @@ ratio=c(1,2,3)
 regression_methods=c("raw",
                      "iptw, unstabilised",
                       "iptw, stabilised",
-                     "iptw, stabilised, truncated 0.01",
-                     "iptw, stabilised, truncated 0.1",
+                     "iptw, stabilised, truncated 0.025",
+                     "iptw, stabilised, truncated 0.05",
                      "gcomp")
 matching_methods=c("exact_greedy",
                    "exact_optimal",

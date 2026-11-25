@@ -27,16 +27,16 @@ regression_call=function(data,id=NULL,time="timen",methods){
       select(id,w)
     # merge dataset
     dataset=merge(data,dataw,by='id')
-  }else if (methods=="iptw, stabilised, truncated 0.01"){
-    weights=iptw(data=baseline,type='stabilised',estimand='ATT',truncate=0.01,
+  }else if (methods=="iptw, stabilised, truncated 0.025"){
+    weights=iptw(data=baseline,type='stabilised',estimand='ATT',truncate=0.025,
                  formula=trt~aoo+sex)
     # merge with full dataset
     dataw=weights$data %>% 
       select(id,w)
     # merge dataset
     dataset=merge(data,dataw,by='id')
-  }else if (methods=="iptw, stabilised, truncated 0.1"){
-    weights=iptw(data=baseline,type='stabilised',estimand='ATT',truncate=0.1,
+  }else if (methods=="iptw, stabilised, truncated 0.05"){
+    weights=iptw(data=baseline,type='stabilised',estimand='ATT',truncate=0.05,
                  formula=trt~aoo+sex)
     # merge with full dataset
     dataw=weights$data %>% 

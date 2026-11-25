@@ -113,8 +113,8 @@ describe=function(m){
                       grepl("noc",m)~"no caliper",TRUE~""),
     label=case_when(m=="iptw, unstabilised"~"unstabilised",
                     m=="iptw, stabilised"~"stabilised",
-                    m=="iptw, stabilised, truncated 0.01"~"stabilised, truncated 1%",
-                    m=="iptw, stabilised, truncated 0.1"~"stabilised, truncated 10%",
+                    m=="iptw, stabilised, truncated 0.025"~"stabilised, truncated 2.5%",
+                    m=="iptw, stabilised, truncated 0.05"~"stabilised, truncated 5%",
                     algorithm!="" & caliper!=""~paste0(algorithm,", ",caliper),
                     algorithm!=""~algorithm,
                     TRUE~family))
@@ -122,7 +122,7 @@ describe=function(m){
 family_levels=c("Unadjusted","Duration only","G-computation","IPTW","Exact matching",
                 "PSM, propensity score","PSM, Mahalanobis")
 label_levels=c("Unadjusted","Duration only","G-computation",
-               "unstabilised","stabilised","stabilised, truncated 1%","stabilised, truncated 10%",
+               "unstabilised","stabilised","stabilised, truncated 2.5%","stabilised, truncated 5%",
                "greedy","optimal","greedy, no caliper","greedy, caliper 0.1","greedy, caliper 0.05")
 methods=describe(unique(results$method)) %>%
   mutate(family=factor(family,levels=intersect(family_levels,family)),

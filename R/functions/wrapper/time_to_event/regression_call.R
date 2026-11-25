@@ -8,11 +8,11 @@ regression_call=function(data,methods,landmark=730){
   }else if (methods=="iptw, stabilised"){
     dataset=iptw(data=data,type='stabilised',estimand='ATT',
                  formula=trt~ageonset+sex)[[1]]
-  }else if (methods=="iptw, stabilised, truncated 0.01"){
-    dataset=iptw(data=data,type='stabilised',estimand='ATT',truncate=0.01,
+  }else if (methods=="iptw, stabilised, truncated 0.025"){
+    dataset=iptw(data=data,type='stabilised',estimand='ATT',truncate=0.025,
                  formula=trt~ageonset+sex)[[1]]
-  }else if (methods=="iptw, stabilised, truncated 0.1"){
-    dataset=iptw(data=data,type='stabilised',estimand='ATT',truncate=0.1,
+  }else if (methods=="iptw, stabilised, truncated 0.05"){
+    dataset=iptw(data=data,type='stabilised',estimand='ATT',truncate=0.05,
                  formula=trt~ageonset+sex)[[1]]
   } else if (methods=="gcomp"){
     dataset=data

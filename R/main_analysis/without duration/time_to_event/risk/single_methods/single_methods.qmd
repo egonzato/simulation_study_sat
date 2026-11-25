@@ -456,7 +456,7 @@ B$t
 Calculate weights
 
 ```{r}
-weights=iptw(data=dftrial,type='stabilised',estimand='ATT',truncate=0.01,
+weights=iptw(data=dftrial,type='stabilised',estimand='ATT',truncate=0.025,
              formula=trt~ageonset+sex)
 # dataset
 dftrialw=weights$data
