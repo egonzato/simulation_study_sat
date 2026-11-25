@@ -32,7 +32,8 @@ psm_matching_interpolation=function(data=NULL,identifier=NULL,formula=NULL,outco
   baseline$logit_ps=log(baseline$ps / (1 - baseline$ps))
   # define propensity score model with the distance given
   if (distance=='glm'){
-      baseline$distance=baseline$ps
+      # logit of the propensity score, with or without caliper (Austin, 2011)
+      baseline$distance=baseline$logit_ps
     } else if (distance=='random forest'){
     if (tune==TRUE){
       baseline[[treatment_var]]=as.factor(baseline[[treatment_var]])
@@ -60,7 +61,9 @@ psm_matching_interpolation=function(data=NULL,identifier=NULL,formula=NULL,outco
   matched=data.frame(); unmatched=c()
   # get treatment out of the formula 
   # divide into treated and untreated
-  treated  = baseline %>% filter(!!treatment_quo==1) %>% mutate(idx=row_number())
+  # greedy matching goes from the trial participants hardest to match (highest propensity score) to the easiest,
+  # as MatchIt does by default (m.order='largest'); idx keeps the original position, used for the covariate matrix
+  treated  = baseline %>% filter(!!treatment_quo==1) %>% mutate(idx=row_number()) %>% arrange(desc(ps))
   untreated = baseline %>% filter(!!treatment_quo==0) %>% mutate(idx=row_number())
   # pull duration and distance before entering
   treated_duration   = treated %>% pull(!!duration_quo)
@@ -76,9 +79,11 @@ psm_matching_interpolation=function(data=NULL,identifier=NULL,formula=NULL,outco
     # ("contrasts can be applied only to factors with 2 or more levels") when a group has one level only
     treated_cov   = cov_data[baseline[[treatment_var]]==1, , drop=FALSE]
     untreated_cov = cov_data[baseline[[treatment_var]]==0, , drop=FALSE]
+    # same order as treated (sorted by propensity score)
+    treated_cov   = treated_cov[treated$idx, , drop=FALSE]
   }  
   # clipping distance
-  if(distance != 'mahalanobis'){
+  if(distance == 'random forest'){
     baseline$distance = pmax(pmin(baseline$distance, 1 - 1e-6), 1e-6)
   }
   # calculate calliper

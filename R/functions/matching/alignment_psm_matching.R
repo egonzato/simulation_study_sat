@@ -23,11 +23,8 @@ psm_matching=function(data=NULL,formula=NULL,duration=NULL,time=NULL,distance='g
   data$logit_ps=log(data$ps / (1 - data$ps))
   # define propensity score model with the distance given
   if (distance=='glm'){
-    if (is.null(caliper)){
-      data$distance=data$ps
-    } else {
-      data$distance=data$logit_ps
-    }
+    # logit of the propensity score, with or without caliper (Austin, 2011)
+    data$distance=data$logit_ps
     } else if (distance=='random forest'){
     if (tune==TRUE){
       data[[treatment_var]]=as.factor(data[[treatment_var]])
@@ -55,7 +52,9 @@ psm_matching=function(data=NULL,formula=NULL,duration=NULL,time=NULL,distance='g
   matched=data.frame(); unmatched=c()
   # get treatment out of the formula 
   # divide into treated and untreated
-  treated=data %>% filter(!!treatment_quo==1) %>% mutate(idx=row_number())
+  # greedy matching goes from the trial participants hardest to match (highest propensity score) to the easiest,
+  # as MatchIt does by default (m.order='largest'); idx keeps the original position, used for the covariate matrix
+  treated=data %>% filter(!!treatment_quo==1) %>% mutate(idx=row_number()) %>% arrange(desc(ps))
   untreated=data %>% filter(!!treatment_quo==0) %>% mutate(idx=row_number())
   # pull duration and distance before entering
   if(!is.null(enexpr(duration))){treated_duration=treated %>% pull(!!duration_quo)}
@@ -71,9 +70,11 @@ psm_matching=function(data=NULL,formula=NULL,duration=NULL,time=NULL,distance='g
     # ("contrasts can be applied only to factors with 2 or more levels") when a group has one level only
     treated_cov   = cov_data[data[[treatment_var]]==1, , drop=FALSE]
     untreated_cov = cov_data[data[[treatment_var]]==0, , drop=FALSE]
+    # same order as treated (sorted by propensity score)
+    treated_cov   = treated_cov[treated$idx, , drop=FALSE]
     }  
   # clipping distance
-  if(distance != 'mahalanobis'){
+  if(distance == 'random forest'){
     data$distance = pmax(pmin(data$distance,1-1e-6),1e-6)
   }
   # calculate caliper
