@@ -94,7 +94,7 @@ tid=expand.grid(id=id,time=t)
 # merge with covariates
 df=merge(covs,tid,by='id') %>% 
   arrange(id,time) %>% 
-  mutate(terr=ifelse(time==0,0,runif(n,0,+90)),
+  mutate(terr=ifelse(time==0,0,runif(n(),0,+90)),
          date=dateonset+time+terr,
          yoo=year(dateonset),
          yoo_c=yoo-mean(yoo))

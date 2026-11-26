@@ -31,7 +31,7 @@ sapply(files, source)
 ```{r}
 set.seed(3111963)
 # define N
-n=1e4
+n=1e5
 # define start and end of registry
 start_date=as.Date("2005-01-01")
 end_date=as.Date("2022-12-31")
@@ -73,7 +73,7 @@ tid=expand.grid(id=id,time=t)
 # merge with covariates
 df=merge(covs,tid,by='id') %>% 
   arrange(id,time) %>% 
-  mutate(terr=ifelse(time==0,0,runif(n,0,+90)),
+  mutate(terr=ifelse(time==0,0,runif(n(),0,+90)),
          date=dateonset+time+terr,
          yoo=year(dateonset),
          yoo_c=yoo-mean(yoo))
